@@ -178,6 +178,7 @@
         loading: true,
         dbMode: 'local',
         user: null,
+        hasPermissionError: false,
 
         // Routing parameters
         currentView: 'trainer',
@@ -227,6 +228,14 @@
         showNewTaskModal: false,
         showNewPackModal: false,
 
+        // Unified confirm dialog overlay
+        confirmModal: {
+          show: false,
+          title: '',
+          message: '',
+          onConfirm: null
+        },
+
         // New item builder templates
         newTask: { name: '', rewardPoints: 10, rewardXp: 15, frequency: 'daily', icon: '📝' },
         newPack: { name: '', cost: 100, stock: 3, theme: 'purple' },
@@ -259,6 +268,28 @@
               }
             }, 1200);
           }
+        },
+
+        // LOCAL STORAGE BACKUP PERSISTENCE WRAPPERS
+        saveLocalData() {
+          if (this.dbMode === 'local') {
+            localStorage.setItem('wurmple_profile', JSON.stringify(this.profile));
+            localStorage.setItem('wurmple_tasks', JSON.stringify(this.tasks));
+            localStorage.setItem('wurmple_inventory', JSON.stringify(this.inventory));
+            localStorage.setItem('wurmple_orders', JSON.stringify(this.orders));
+          }
+        },
+
+        loadLocalData() {
+          const profile = localStorage.getItem('wurmple_profile');
+          const tasks = localStorage.getItem('wurmple_tasks');
+          const inventory = localStorage.getItem('wurmple_inventory');
+          const orders = localStorage.getItem('wurmple_orders');
+
+          if (profile) this.profile = JSON.parse(profile);
+          if (tasks) this.tasks = JSON.parse(tasks);
+          if (inventory) this.inventory = JSON.parse(inventory);
+          if (orders) this.orders = JSON.parse(orders);
         },
 
         // FIREBASE SYNCER & LISTENER INITIALIZATION
@@ -304,10 +335,24 @@
             this.setupFirestoreListeners(db, appId);
           } catch (err) {
             console.error("Firebase connection error:", err);
+            this.handleFirebaseError(err);
+          }
+        },
+
+        // DEFENSIVE DATABASE ACCESS AND ERROR GUARD
+        handleFirebaseError(err) {
+          if (this.dbMode === 'firebase') {
+            console.warn("Switching to local storage due to Firebase permission issues:", err);
             this.dbMode = 'local';
+            this.hasPermissionError = true;
             this.loadDemoSessionData();
             this.loading = false;
-            this.triggerAlert("Local Mode Active", "Cloud sync was blocked or configuration is absent. App running in offline local memory successfully.", "info");
+            
+            this.triggerAlert(
+              "Database Access Blocked! 🔒", 
+              "Your Firestore rules are blocking cloud connection. Automatically running in Local Mode to protect your data. Open the 'Professor Panel' to learn how to fix this!", 
+              "error"
+            );
           }
         },
 
@@ -323,7 +368,10 @@
             } else {
               window.fbSetDoc(profileRef, this.profile);
             }
-          }, (err) => console.error("Profile fetch error:", err));
+          }, (err) => {
+            console.error("Profile fetch error:", err);
+            this.handleFirebaseError(err);
+          });
 
           // 2. Tasks Checklist
           const tasksRef = window.fbCollection(db, 'artifacts', appId, 'public', 'data', 'tasks');
@@ -335,7 +383,10 @@
             } else {
               this.tasks = loaded;
             }
-          }, (err) => console.error("Tasks fetch error:", err));
+          }, (err) => {
+            console.error("Tasks fetch error:", err);
+            this.handleFirebaseError(err);
+          });
 
           // 3. Inventory Stock
           const invRef = window.fbCollection(db, 'artifacts', appId, 'public', 'data', 'inventory');
@@ -347,7 +398,10 @@
             } else {
               this.inventory = loaded;
             }
-          }, (err) => console.error("Inventory fetch error:", err));
+          }, (err) => {
+            console.error("Inventory fetch error:", err);
+            this.handleFirebaseError(err);
+          });
 
           // 4. Claims/Orders Queue
           const ordersRef = window.fbCollection(db, 'artifacts', appId, 'public', 'data', 'orders');
@@ -358,7 +412,7 @@
             this.loading = false;
           }, (err) => {
             console.error("Orders fetch error:", err);
-            this.loading = false;
+            this.handleFirebaseError(err);
           });
         },
 
@@ -385,6 +439,9 @@
             { id: 'p3', name: 'Scarlet & Violet: Temporal Forces', cost: 100, stock: 5, theme: 'teal' }
           ];
           this.orders = [];
+
+          // Override demo defaults with stored browser progress if available
+          this.loadLocalData();
         },
 
         // DATABASE SEEDING ASSISTANTS
@@ -448,6 +505,16 @@
           return this.tasks.filter(t => t.frequency === freq);
         },
 
+        triggerConfirm(title, message, callback) {
+          this.confirmModal.title = title;
+          this.confirmModal.message = message;
+          this.confirmModal.onConfirm = () => {
+            callback();
+            this.confirmModal.show = false;
+          };
+          this.confirmModal.show = true;
+        },
+
         async toggleTaskCheck(task) {
           const isDaily = task.frequency === 'daily';
           const completeMark = isDaily ? this.getTodayString() : this.getCurrentWeekString();
@@ -468,20 +535,22 @@
 
             this.calculateAndTriggerLevelUp(task.rewardXp);
           } else {
-            // Replaced manual prompt popup with clean, user-friendly custom trigger alert
-            const confirmDeduct = confirm(`You already checked off this task today!\nUnchecking it will deduct ${task.rewardPoints} Coins and ${task.rewardXp} EXP. Continue?`);
-            if (confirmDeduct) {
-              task[arrayKey] = task[arrayKey].filter(x => x !== completeMark);
-              this.profile.points = Math.max(0, this.profile.points - task.rewardPoints);
-              this.profile.xp = Math.max(0, this.profile.xp - task.rewardXp);
-              
-              this.profile.level = Math.floor(this.profile.xp / 100) + 1;
+            // Native overlay confirm modal instead of blocking browser popups
+            this.triggerConfirm(
+              "Uncheck Activity?",
+              `You already checked off this task! Unchecking it will deduct ${task.rewardPoints} Coins and ${task.rewardXp} EXP from your balance. Continue?`,
+              async () => {
+                task[arrayKey] = task[arrayKey].filter(x => x !== completeMark);
+                this.profile.points = Math.max(0, this.profile.points - task.rewardPoints);
+                this.profile.xp = Math.max(0, this.profile.xp - task.rewardXp);
+                this.profile.level = Math.floor(this.profile.xp / 100) + 1;
 
-              await this.syncProfile();
-              await this.syncTask(task);
-              
-              this.triggerAlert("Progress Deducted", "Activity unchecked. Points and EXP updated.", "info");
-            }
+                await this.syncProfile();
+                await this.syncTask(task);
+                
+                this.triggerAlert("Progress Deducted", "Activity unchecked. Points and EXP updated.", "info");
+              }
+            );
           }
         },
 
@@ -516,39 +585,43 @@
             return;
           }
 
-          const confirmRedeem = confirm(`Do you want to spend ${pack.cost} Coins to redeem 1x [${pack.name}]?`);
-          if (!confirmRedeem) return;
+          this.triggerConfirm(
+            "Redeem Booster?",
+            `Do you want to spend ${pack.cost} Coins to redeem 1x [${pack.name}]?`,
+            async () => {
+              this.profile.points -= pack.cost;
+              pack.stock -= 1;
 
-          this.profile.points -= pack.cost;
-          pack.stock -= 1;
+              const orderObj = {
+                itemName: pack.name,
+                cost: pack.cost,
+                timestamp: Date.now(),
+                status: 'pending'
+              };
 
-          const orderObj = {
-            itemName: pack.name,
-            cost: pack.cost,
-            timestamp: Date.now(),
-            status: 'pending'
-          };
+              if (this.dbMode === 'firebase') {
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
+                const db = window.fbGetFirestore();
+                
+                const ordersCol = window.fbCollection(db, 'artifacts', appId, 'public', 'data', 'orders');
+                await window.fbAddDoc(ordersCol, orderObj);
+                
+                await window.fbUpdateDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'inventory', pack.id), { stock: pack.stock });
+              } else {
+                orderObj.id = 'ord-' + Date.now();
+                this.orders.push(orderObj);
+                this.saveLocalData();
+              }
 
-          if (this.dbMode === 'firebase') {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
-            const db = window.fbGetFirestore();
-            
-            const ordersCol = window.fbCollection(db, 'artifacts', appId, 'public', 'data', 'orders');
-            await window.fbAddDoc(ordersCol, orderObj);
-            
-            await window.fbUpdateDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'inventory', pack.id), { stock: pack.stock });
-          } else {
-            orderObj.id = 'ord-' + Date.now();
-            this.orders.push(orderObj);
-          }
+              await this.syncProfile();
+              
+              try {
+                sounds.playPurchase();
+              } catch(e){}
 
-          await this.syncProfile();
-          
-          try {
-            sounds.playPurchase();
-          } catch(e){}
-
-          this.triggerAlert("Order Created! 🎉", "Booster claimed successfully! Ask Professor Parent to deliver your pack.", "success");
+              this.triggerAlert("Order Created! 🎉", "Booster claimed successfully! Ask Professor Parent to deliver your pack.", "success");
+            }
+          );
         },
 
         // DYNAMIC WURMPLE COMPANION SPEECH (THEME FOCUS)
@@ -658,36 +731,42 @@
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
             const db = window.fbGetFirestore();
             await window.fbUpdateDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'orders', order.id), { status: 'delivered' });
+          } else {
+            this.saveLocalData();
           }
           this.triggerAlert("Pack Delivered!", `Physical booster pack handed over and logged successfully!`, "success");
         },
 
         async cancelAndRefundOrder(order) {
-          const confirmRefund = confirm(`Are you sure you want to cancel this order and refund ${order.cost} Coins?`);
-          if (!confirmRefund) return;
+          this.triggerConfirm(
+            "Cancel Claim Ticket?",
+            `Are you sure you want to cancel this order and refund ${order.cost} Coins to your child's wallet?`,
+            async () => {
+              this.profile.points += order.cost;
 
-          this.profile.points += order.cost;
+              const matchedPack = this.inventory.find(p => p.name === order.itemName);
+              if (matchedPack) {
+                matchedPack.stock += 1;
+                if (this.dbMode === 'firebase') {
+                  const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
+                  const db = window.fbGetFirestore();
+                  await window.fbUpdateDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'inventory', matchedPack.id), { stock: matchedPack.stock });
+                }
+              }
 
-          const matchedPack = this.inventory.find(p => p.name === order.itemName);
-          if (matchedPack) {
-            matchedPack.stock += 1;
-            if (this.dbMode === 'firebase') {
-              const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
-              const db = window.fbGetFirestore();
-              await window.fbUpdateDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'inventory', matchedPack.id), { stock: matchedPack.stock });
+              if (this.dbMode === 'firebase') {
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
+                const db = window.fbGetFirestore();
+                await window.fbDeleteDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'orders', order.id));
+              } else {
+                this.orders = this.orders.filter(o => o.id !== order.id);
+                this.saveLocalData();
+              }
+
+              await this.syncProfile();
+              this.triggerAlert("Order Refunded", "Coins refunded and physical stock restored.", "info");
             }
-          }
-
-          if (this.dbMode === 'firebase') {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
-            const db = window.fbGetFirestore();
-            await window.fbDeleteDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'orders', order.id));
-          } else {
-            this.orders = this.orders.filter(o => o.id !== order.id);
-          }
-
-          await this.syncProfile();
-          this.triggerAlert("Order Refunded", "Coins refunded and physical stock restored.", "info");
+          );
         },
 
         // PROFESSOR ACTION: STORE INVENTORY INSERTERS
@@ -717,6 +796,7 @@
           } else {
             packObj.id = 'p-' + Date.now();
             this.inventory.push(packObj);
+            this.saveLocalData();
           }
 
           this.showNewPackModal = false;
@@ -729,21 +809,27 @@
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
             const db = window.fbGetFirestore();
             await window.fbUpdateDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'inventory', pack.id), { stock: pack.stock });
+          } else {
+            this.saveLocalData();
           }
         },
 
         async deletePack(pack) {
-          const confirmDel = confirm(`Remove ${pack.name} from store entirely?`);
-          if (!confirmDel) return;
-
-          if (this.dbMode === 'firebase') {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
-            const db = window.fbGetFirestore();
-            await window.fbDeleteDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'inventory', pack.id));
-          } else {
-            this.inventory = this.inventory.filter(p => p.id !== pack.id);
-          }
-          this.triggerAlert("Pack Removed", "Pack removed from shop inventory.", "info");
+          this.triggerConfirm(
+            "Remove Shop Item?",
+            `Are you sure you want to remove "${pack.name}" from your shop list entirely?`,
+            async () => {
+              if (this.dbMode === 'firebase') {
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
+                const db = window.fbGetFirestore();
+                await window.fbDeleteDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'inventory', pack.id));
+              } else {
+                this.inventory = this.inventory.filter(p => p.id !== pack.id);
+                this.saveLocalData();
+              }
+              this.triggerAlert("Pack Removed", "Pack removed from shop inventory.", "info");
+            }
+          );
         },
 
         // PROFESSOR ACTION: TASK INSERTERS
@@ -776,6 +862,7 @@
           } else {
             taskObj.id = 'tsk-' + Date.now();
             this.tasks.push(taskObj);
+            this.saveLocalData();
           }
 
           this.showNewTaskModal = false;
@@ -783,17 +870,21 @@
         },
 
         async deleteTask(task) {
-          const confirmDel = confirm(`Delete the task: "${task.name}"?`);
-          if (!confirmDel) return;
-
-          if (this.dbMode === 'firebase') {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
-            const db = window.fbGetFirestore();
-            await window.fbDeleteDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'tasks', task.id));
-          } else {
-            this.tasks = this.tasks.filter(t => t.id !== task.id);
-          }
-          this.triggerAlert("Task Deleted", "Activity removed from checklist.", "info");
+          this.triggerConfirm(
+            "Delete Task Activity?",
+            `Are you sure you want to delete the activity: "${task.name}"?`,
+            async () => {
+              if (this.dbMode === 'firebase') {
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
+                const db = window.fbGetFirestore();
+                await window.fbDeleteDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'tasks', task.id));
+              } else {
+                this.tasks = this.tasks.filter(t => t.id !== task.id);
+                this.saveLocalData();
+              }
+              this.triggerAlert("Task Deleted", "Activity removed from checklist.", "info");
+            }
+          );
         },
 
         // PROFESSOR ACTION: WALLET BONUSES
@@ -832,53 +923,60 @@
         },
 
         async forceTasksReset() {
-          const confirmReset = confirm("Are you sure you want to wipe all task checkmarks? (This will NOT deduct existing coins)");
-          if (!confirmReset) return;
-
-          for (const t of this.tasks) {
-            t.completedDates = [];
-            t.completedWeeks = [];
-            await this.syncTask(t);
-          }
-          this.triggerAlert("Task Checklist Reset", "All daily and weekly activities have been cleared.", "success");
+          this.triggerConfirm(
+            "Reset Activity Checkmarks?",
+            "Are you sure you want to clear all checked items from your child's list? (This will NOT deduct his earned coins)",
+            async () => {
+              for (const t of this.tasks) {
+                t.completedDates = [];
+                t.completedWeeks = [];
+                await this.syncTask(t);
+              }
+              this.triggerAlert("Task Checklist Reset", "All daily and weekly activities have been cleared.", "success");
+            }
+          );
         },
 
         async factoryReset() {
-          const confirmReset = confirm("⚠️ CRITICAL ACTION: Wipe all custom tasks, reset level progress, clear purchases, and reload default inventory settings?");
-          if (!confirmReset) return;
+          this.triggerConfirm(
+            "Master Factory Reset?",
+            "⚠️ CRITICAL ACTION: This will permanently wipe all checkmark history, clear coin balances, reset levels back to 1, and reload default inventory configurations. Proceed?",
+            async () => {
+              this.profile = {
+                points: 0,
+                xp: 0,
+                level: 1,
+                currentForm: 'wurmple',
+                parentPin: 'wurmple',
+                totalEarned: 0
+              };
 
-          this.profile = {
-            points: 0,
-            xp: 0,
-            level: 1,
-            currentForm: 'wurmple',
-            parentPin: 'wurmple',
-            totalEarned: 0
-          };
+              if (this.dbMode === 'firebase') {
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
+                const db = window.fbGetFirestore();
+                
+                await window.fbSetDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'profile', 'state'), this.profile);
 
-          if (this.dbMode === 'firebase') {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
-            const db = window.fbGetFirestore();
-            
-            await window.fbSetDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'profile', 'state'), this.profile);
+                for (const t of this.tasks) {
+                  await window.fbDeleteDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'tasks', t.id));
+                }
+                for (const p of this.inventory) {
+                  await window.fbDeleteDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'inventory', p.id));
+                }
+                for (const o of this.orders) {
+                  await window.fbDeleteDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'orders', o.id));
+                }
+                
+                this.seedTasksDatabase(db, appId);
+                this.seedInventoryDatabase(db, appId);
+              } else {
+                this.loadDemoSessionData();
+                this.saveLocalData();
+              }
 
-            for (const t of this.tasks) {
-              await window.fbDeleteDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'tasks', t.id));
+              this.triggerAlert("Wiped & Cleared", "Database restored to summer configurations successfully.", "info");
             }
-            for (const p of this.inventory) {
-              await window.fbDeleteDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'inventory', p.id));
-            }
-            for (const o of this.orders) {
-              await window.fbDeleteDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'orders', o.id));
-            }
-            
-            this.seedTasksDatabase(db, appId);
-            this.seedInventoryDatabase(db, appId);
-          } else {
-            this.loadDemoSessionData();
-          }
-
-          this.triggerAlert("Wiped & Cleared", "Database restored to summer configurations successfully.", "info");
+          );
         },
 
         // DYNAMIC UTILITIES
@@ -896,6 +994,8 @@
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
             const db = window.fbGetFirestore();
             await window.fbSetDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'profile', 'state'), this.profile, { merge: true });
+          } else {
+            this.saveLocalData();
           }
         },
 
@@ -907,6 +1007,8 @@
               completedDates: task.completedDates || [],
               completedWeeks: task.completedWeeks || []
             });
+          } else {
+            this.saveLocalData();
           }
         },
 
@@ -1453,8 +1555,36 @@
           </div>
 
           <!-- Parent Content Window Area -->
-          <div class="lg:col-span-3">
+          <div class="lg:col-span-3 space-y-6">
             
+            <!-- Firestore Permission Guide Warning Card -->
+            <div x-show="hasPermissionError" class="bg-red-50 border-2 border-red-300 rounded-2xl p-5 text-red-800 space-y-3 shadow-md">
+              <h4 class="font-black text-base flex items-center gap-2 text-red-900 pokemon-title">
+                <i class="fa-solid fa-shield-halved animate-bounce"></i> Firestore Database Permission Blocked! 🔒
+              </h4>
+              <p class="text-xs md:text-sm font-semibold leading-relaxed">
+                We detected a <strong>"Missing or insufficient permissions"</strong> error from your Google Firebase project. This happens because your database rules are locked by default. 
+                The app has automatically switched to <strong>Local Storage Mode</strong> so your son can still earn coins and evolve his Wurmple locally in his browser!
+              </p>
+              <div class="border-t border-red-200 pt-3 space-y-2.5 text-xs md:text-sm">
+                <p class="font-extrabold text-red-900">Follow these 4 simple steps to fix this and enable Cloud Sync:</p>
+                <ol class="list-decimal pl-5 space-y-1.5 font-bold">
+                  <li>Open your <a href="https://console.firebase.google.com/" target="_blank" class="underline text-red-700 hover:text-red-900">Firebase Console</a>.</li>
+                  <li>In the left menu under Build, click <strong>Firestore Database</strong>, then click the <strong>Rules</strong> tab at the top.</li>
+                  <li>Copy and paste the exact block below to replace your existing rules:</li>
+                </ol>
+                <div class="relative bg-red-950 text-red-200 p-3.5 rounded-xl font-mono text-[11px] md:text-xs overflow-x-auto select-all shadow-inner border border-red-800">rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}</div>
+                <p class="font-extrabold text-red-900">4. Click the blue "Publish" button at the top-right. Once published, refresh this page and everything will sync automatically! 🎉</p>
+              </div>
+            </div>
+
             <!-- PANEL A: FULFILL REDEEMS -->
             <div x-show="parentActiveTab === 'deliveries'" class="bg-white rounded-3xl p-6 shadow-lg border-2 border-red-200">
               <div class="border-b border-gray-100 pb-3 mb-4 flex justify-between items-center">
@@ -1755,7 +1885,7 @@
               <label class="block text-xs font-bold text-gray-500 mb-1">EMOJI ICON</label>
               <select x-model="newTask.icon" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 font-semibold text-sm focus:border-red-400 focus:outline-none">
                 <option value="🎻">🎻 Violin</option>
-                <option value="📖">📖 Book</option>
+                <option value="📚">📚 Book</option>
                 <option value="🔢">🔢 Math</option>
                 <option value="🧹">🧹 Cleaning</option>
                 <option value="⚽">⚽ Sports</option>
@@ -1763,7 +1893,6 @@
                 <option value="🥦">🥦 Eat Veggies</option>
                 <option value="🛏️">🛏️ Bedtime</option>
                 <option value="📝">📝 Note</option>
-                <option value="🚲">🚲 Biking</option>
               </select>
             </div>
           </div>
@@ -1807,7 +1936,6 @@
               <option value="green">Green (Grass, Twilight)</option>
               <option value="yellow">Yellow (Lightning, Crown Zenith)</option>
               <option value="teal">Teal (Mask, Temporal)</option>
-              <option value="orange">Orange</option>
             </select>
           </div>
 
@@ -1844,6 +1972,20 @@
       <button @click="showAlert = false" class="text-gray-400 hover:text-gray-600">
         <i class="fa-solid fa-times"></i>
       </button>
+    </div>
+
+    <!-- CUSTOM CONFIRMATION MODAL -->
+    <div x-show="confirmModal.show" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 p-4" x-transition>
+      <div class="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border-2 border-emerald-400 transform hover:scale-102 transition-transform">
+        <h3 class="pokemon-title text-lg text-emerald-800 mb-2 flex items-center gap-2">
+          <i class="fa-solid fa-circle-question text-amber-500 animate-pulse"></i> <span x-text="confirmModal.title"></span>
+        </h3>
+        <p class="text-xs md:text-sm text-gray-600 font-semibold mb-6 leading-relaxed" x-text="confirmModal.message"></p>
+        <div class="flex gap-3">
+          <button @click="confirmModal.show = false" class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-2.5 rounded-xl text-xs transition-all">Cancel</button>
+          <button @click="confirmModal.onConfirm()" class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2.5 rounded-xl text-xs shadow-sm transition-all">Yes, Proceed!</button>
+        </div>
+      </div>
     </div>
 
   </div>
