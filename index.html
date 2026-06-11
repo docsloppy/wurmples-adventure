@@ -65,16 +65,20 @@
   -->
   <script>
     // ==========================================
-    // PARENT NOTE: PASTE YOUR FIREBASE CREDENTIALS HERE TO GO ONLINE
+    // PARENT NOTE: FIXED VARIABLE DECLARATIONS
+    // Both MY_FIREBASE_CONFIG and firebaseConfig are now mapped together!
     // ==========================================
-    const firebaseConfig = {
-  apiKey: "AIzaSyC7VinwSJheIF0aX1UsuCBOuE-OlgxWkWM",
-  authDomain: "wurmples-adventure.firebaseapp.com",
-  projectId: "wurmples-adventure",
-  storageBucket: "wurmples-adventure.firebasestorage.app",
-  messagingSenderId: "447850856669",
-  appId: "1:447850856669:web:474a9e94328792d722db34"
-};
+    const MY_FIREBASE_CONFIG = {
+      apiKey: "AIzaSyC7VinwSJheIF0aX1UsuCBOuE-OlgxWkWM",
+      authDomain: "wurmples-adventure.firebaseapp.com",
+      projectId: "wurmples-adventure",
+      storageBucket: "wurmples-adventure.firebasestorage.app",
+      messagingSenderId: "447850856669",
+      appId: "1:447850856669:web:474a9e94328792d722db34"
+    };
+
+    // Alias to prevent any scope or key verification errors
+    const firebaseConfig = MY_FIREBASE_CONFIG;
 
     // SOUND EFFECTS RETRO SYNTHESIS ENGINE
     class SoundEffects {
@@ -244,8 +248,8 @@
             });
             setTimeout(() => {
               if (this.loading) {
-                // Check if user set up their custom config file
-                if (MY_FIREBASE_CONFIG && MY_FIREBASE_CONFIG.apiKey !== "YOUR_API_KEY") {
+                // Check if user set up their custom config file safely
+                if (typeof MY_FIREBASE_CONFIG !== 'undefined' && MY_FIREBASE_CONFIG && MY_FIREBASE_CONFIG.apiKey !== "YOUR_API_KEY") {
                   this.connectFirebase();
                 } else {
                   this.dbMode = 'local';
@@ -266,8 +270,8 @@
             if (typeof __firebase_config !== 'undefined' && __firebase_config) {
               config = JSON.parse(__firebase_config);
             } 
-            // 2. Otherwise use parent hardcoded configuration
-            else if (MY_FIREBASE_CONFIG && MY_FIREBASE_CONFIG.apiKey !== "YOUR_API_KEY") {
+            // 2. Otherwise use parent hardcoded configuration safely
+            else if (typeof MY_FIREBASE_CONFIG !== 'undefined' && MY_FIREBASE_CONFIG && MY_FIREBASE_CONFIG.apiKey !== "YOUR_API_KEY") {
               config = MY_FIREBASE_CONFIG;
             }
 
