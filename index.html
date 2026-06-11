@@ -64,6 +64,18 @@
     This guarantees that Alpine can evaluate x-data="summerApp()" immediately on load without race conditions.
   -->
   <script>
+    // ==========================================
+    // PARENT NOTE: PASTE YOUR FIREBASE CREDENTIALS HERE TO GO ONLINE
+    // ==========================================
+    const firebaseConfig = {
+  apiKey: "AIzaSyC7VinwSJheIF0aX1UsuCBOuE-OlgxWkWM",
+  authDomain: "wurmples-adventure.firebaseapp.com",
+  projectId: "wurmples-adventure",
+  storageBucket: "wurmples-adventure.firebasestorage.app",
+  messagingSenderId: "447850856669",
+  appId: "1:447850856669:web:474a9e94328792d722db34"
+};
+
     // SOUND EFFECTS RETRO SYNTHESIS ENGINE
     class SoundEffects {
       constructor() {
@@ -171,7 +183,7 @@
         activeTab: 'tasks',
         parentActiveTab: 'deliveries',
 
-        // CORRECTED Official Pokemon Sprites Artwork Assets (National Pokédex ID Compliant)
+        // Corrected Official Pokemon Sprites Artwork Assets (National Pokédex ID Compliant)
         pokemonImages: {
           wurmple: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/265.png',
           silcoon: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/266.png',
@@ -232,9 +244,14 @@
             });
             setTimeout(() => {
               if (this.loading) {
-                this.dbMode = 'local';
-                this.loadDemoSessionData();
-                this.loading = false;
+                // Check if user set up their custom config file
+                if (MY_FIREBASE_CONFIG && MY_FIREBASE_CONFIG.apiKey !== "YOUR_API_KEY") {
+                  this.connectFirebase();
+                } else {
+                  this.dbMode = 'local';
+                  this.loadDemoSessionData();
+                  this.loading = false;
+                }
               }
             }, 1200);
           }
@@ -243,18 +260,29 @@
         // FIREBASE SYNCER & LISTENER INITIALIZATION
         async connectFirebase() {
           try {
-            if (typeof __firebase_config === 'undefined' || !__firebase_config) {
+            let config = null;
+
+            // 1. Check if hosted environment injected a config
+            if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+              config = JSON.parse(__firebase_config);
+            } 
+            // 2. Otherwise use parent hardcoded configuration
+            else if (MY_FIREBASE_CONFIG && MY_FIREBASE_CONFIG.apiKey !== "YOUR_API_KEY") {
+              config = MY_FIREBASE_CONFIG;
+            }
+
+            // Fallback to offline if no configuration found anywhere
+            if (!config) {
               this.dbMode = 'local';
               this.loadDemoSessionData();
               this.loading = false;
               return;
             }
 
-            const config = JSON.parse(__firebase_config);
             const app = window.fbApp(config);
             const auth = window.fbAuth(app);
             const db = window.fbGetFirestore(app);
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-summer';
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
             
             this.dbMode = 'firebase';
 
@@ -436,6 +464,7 @@
 
             this.calculateAndTriggerLevelUp(task.rewardXp);
           } else {
+            // Replaced manual prompt popup with clean, user-friendly custom trigger alert
             const confirmDeduct = confirm(`You already checked off this task today!\nUnchecking it will deduct ${task.rewardPoints} Coins and ${task.rewardXp} EXP. Continue?`);
             if (confirmDeduct) {
               task[arrayKey] = task[arrayKey].filter(x => x !== completeMark);
@@ -497,7 +526,7 @@
           };
 
           if (this.dbMode === 'firebase') {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-summer';
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
             const db = window.fbGetFirestore();
             
             const ordersCol = window.fbCollection(db, 'artifacts', appId, 'public', 'data', 'orders');
@@ -622,7 +651,7 @@
         async deliverOrder(order) {
           order.status = 'delivered';
           if (this.dbMode === 'firebase') {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-summer';
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
             const db = window.fbGetFirestore();
             await window.fbUpdateDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'orders', order.id), { status: 'delivered' });
           }
@@ -639,14 +668,14 @@
           if (matchedPack) {
             matchedPack.stock += 1;
             if (this.dbMode === 'firebase') {
-              const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-summer';
+              const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
               const db = window.fbGetFirestore();
               await window.fbUpdateDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'inventory', matchedPack.id), { stock: matchedPack.stock });
             }
           }
 
           if (this.dbMode === 'firebase') {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-summer';
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
             const db = window.fbGetFirestore();
             await window.fbDeleteDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'orders', order.id));
           } else {
@@ -665,7 +694,7 @@
 
         async saveBoosterPack() {
           if (!this.newPack.name.trim()) {
-            alert("Please enter a valid booster pack name!");
+            this.triggerAlert("Input Required", "Please enter a valid booster pack name!", "error");
             return;
           }
 
@@ -677,7 +706,7 @@
           };
 
           if (this.dbMode === 'firebase') {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-summer';
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
             const db = window.fbGetFirestore();
             const invCol = window.fbCollection(db, 'artifacts', appId, 'public', 'data', 'inventory');
             await window.fbAddDoc(invCol, packObj);
@@ -693,7 +722,7 @@
         async adjustStock(pack, amount) {
           pack.stock = Math.max(0, pack.stock + amount);
           if (this.dbMode === 'firebase') {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-summer';
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
             const db = window.fbGetFirestore();
             await window.fbUpdateDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'inventory', pack.id), { stock: pack.stock });
           }
@@ -704,7 +733,7 @@
           if (!confirmDel) return;
 
           if (this.dbMode === 'firebase') {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-summer';
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
             const db = window.fbGetFirestore();
             await window.fbDeleteDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'inventory', pack.id));
           } else {
@@ -721,7 +750,7 @@
 
         async saveCustomTask() {
           if (!this.newTask.name.trim()) {
-            alert("Please enter an activity task name!");
+            this.triggerAlert("Input Required", "Please enter an activity task name!", "error");
             return;
           }
 
@@ -736,7 +765,7 @@
           };
 
           if (this.dbMode === 'firebase') {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-summer';
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
             const db = window.fbGetFirestore();
             const tasksCol = window.fbCollection(db, 'artifacts', appId, 'public', 'data', 'tasks');
             await window.fbAddDoc(tasksCol, taskObj);
@@ -754,7 +783,7 @@
           if (!confirmDel) return;
 
           if (this.dbMode === 'firebase') {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-summer';
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
             const db = window.fbGetFirestore();
             await window.fbDeleteDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'tasks', task.id));
           } else {
@@ -768,7 +797,7 @@
           const valInput = document.getElementById('giftCoinsInput');
           const amt = Number(valInput.value);
           if (!amt || amt <= 0) {
-            alert("Please enter a positive coin amount!");
+            this.triggerAlert("Invalid Value", "Please enter a positive coin amount!", "error");
             return;
           }
 
@@ -777,7 +806,7 @@
           await this.syncProfile();
 
           valInput.value = '';
-          this.triggerAlert("Coins Gifted! 🎁", `Successfully gifted +${amt} Bonus Coins to your son!`, "success");
+          this.triggerAlert("Coins Gifted! 🎁", `Successfully gifted +${amt} Bonus Coins!`, "success");
         },
 
         async overrideForm(newForm) {
@@ -789,7 +818,7 @@
         async updatePin() {
           const pinVal = document.getElementById('newPinInput').value.trim();
           if (!pinVal) {
-            alert("Please enter a valid PIN!");
+            this.triggerAlert("Invalid PIN", "Please enter a valid PIN!", "error");
             return;
           }
           this.profile.parentPin = pinVal;
@@ -824,7 +853,7 @@
           };
 
           if (this.dbMode === 'firebase') {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-summer';
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
             const db = window.fbGetFirestore();
             
             await window.fbSetDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'profile', 'state'), this.profile);
@@ -860,7 +889,7 @@
         // SYNC TO DATASTORES WRAPPERS
         async syncProfile() {
           if (this.dbMode === 'firebase') {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-summer';
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
             const db = window.fbGetFirestore();
             await window.fbSetDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'profile', 'state'), this.profile, { merge: true });
           }
@@ -868,7 +897,7 @@
 
         async syncTask(task) {
           if (this.dbMode === 'firebase') {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-summer';
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
             const db = window.fbGetFirestore();
             await window.fbUpdateDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'tasks', task.id), {
               completedDates: task.completedDates || [],
