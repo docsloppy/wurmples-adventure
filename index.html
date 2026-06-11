@@ -1,0 +1,1840 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wurmple's Adventure Dashboard</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts - Nunito & DynaPuff for playful/Pokemon vibe -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DynaPuff:wght@400..700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <!-- Font Awesome for Emojis/Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <style>
+    body {
+      font-family: 'Nunito', sans-serif;
+    }
+    .pokemon-title {
+      font-family: 'DynaPuff', cursive;
+    }
+    /* Retro/Gaming Flashing & Animations */
+    @keyframes evolve-bounce {
+      0%, 100% { transform: scale(1); filter: brightness(1) contrast(1); }
+      50% { transform: scale(1.25); filter: brightness(2.5) contrast(0.6); }
+    }
+    @keyframes evolve-spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    @keyframes float-leaf {
+      0% { transform: translateY(0px) rotate(0deg); opacity: 0.8; }
+      50% { transform: translateY(-20px) rotate(180deg); opacity: 0.4; }
+      100% { transform: translateY(-40px) rotate(360deg); opacity: 0; }
+    }
+    .evolve-anim {
+      animation: evolve-bounce 0.16s infinite ease-in-out;
+    }
+    .bg-radar {
+      background: radial-gradient(circle, rgba(254,240,138,0.5) 0%, rgba(254,240,138,0) 70%);
+      animation: evolve-spin 6s linear infinite;
+    }
+    .floating-leaf {
+      position: absolute;
+      pointer-events: none;
+      animation: float-leaf 5s linear infinite;
+    }
+    /* Card shine overlay */
+    .pack-shine {
+      background: linear-gradient(135deg, rgba(255,255,255,0) 30%, rgba(255,255,255,0.4) 50%, rgba(255,255,255,0) 70%);
+      background-size: 200% 200%;
+      animation: shine 4s infinite linear;
+    }
+    @keyframes shine {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+    [x-cloak] { display: none !important; }
+  </style>
+
+  <!-- 
+    CRITICAL FIX: Define SoundEffects and summerApp globally on window BEFORE loading Alpine.js.
+    This guarantees that Alpine can evaluate x-data="summerApp()" immediately on load without race conditions.
+  -->
+  <script>
+    // SOUND EFFECTS RETRO SYNTHESIS ENGINE
+    class SoundEffects {
+      constructor() {
+        this.ctx = null;
+      }
+      init() {
+        if (!this.ctx) {
+          this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      }
+      playSuccess() {
+        this.init();
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        
+        osc.frequency.setValueAtTime(523.25, now); // C5
+        osc.frequency.setValueAtTime(659.25, now + 0.08); // E5
+        osc.frequency.setValueAtTime(783.99, now + 0.16); // G5
+        osc.frequency.setValueAtTime(1046.50, now + 0.24); // C6
+        
+        gain.gain.setValueAtTime(0.08, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+        
+        osc.start(now);
+        osc.stop(now + 0.45);
+      }
+      playPurchase() {
+        this.init();
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        
+        osc.frequency.setValueAtTime(587.33, now); // D5
+        osc.frequency.setValueAtTime(880.00, now + 0.06); // A5
+        osc.frequency.setValueAtTime(1174.66, now + 0.12); // D6
+        
+        gain.gain.setValueAtTime(0.12, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+        
+        osc.start(now);
+        osc.stop(now + 0.35);
+      }
+      playEvolution() {
+        this.init();
+        const now = this.ctx.currentTime;
+        for (let i = 0; i < 12; i++) {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sawtooth';
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          
+          const pitch = 250 + i * 45;
+          const startTime = now + i * 0.12;
+          osc.frequency.setValueAtTime(pitch, startTime);
+          
+          gain.gain.setValueAtTime(0.04, startTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.11);
+          
+          osc.start(startTime);
+          osc.stop(startTime + 0.12);
+        }
+        const fanfareTime = now + 12 * 0.12;
+        const notes = [523.25, 523.25, 523.25, 523.25, 659.25, 587.33, 659.25, 783.99, 1046.50];
+        const durs = [0.08, 0.08, 0.08, 0.24, 0.24, 0.12, 0.12, 0.12, 0.5];
+        let accum = fanfareTime;
+        notes.forEach((note, idx) => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'triangle';
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.frequency.setValueAtTime(note, accum);
+          gain.gain.setValueAtTime(0.08, accum);
+          gain.gain.exponentialRampToValueAtTime(0.001, accum + durs[idx] - 0.015);
+          osc.start(accum);
+          osc.stop(accum + durs[idx]);
+          accum += durs[idx];
+        });
+      }
+    }
+
+    window.summerApp = function() {
+      return {
+        // Loading variables
+        loading: true,
+        dbMode: 'local',
+        user: null,
+
+        // Routing parameters
+        currentView: 'trainer',
+        parentAuthenticated: false,
+        parentPinInput: '',
+        pinError: false,
+        activeTab: 'tasks',
+        parentActiveTab: 'deliveries',
+
+        // CORRECTED Official Pokemon Sprites Artwork Assets (National Pokédex ID Compliant)
+        pokemonImages: {
+          wurmple: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/265.png',
+          silcoon: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/266.png',
+          beautifly: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/267.png',
+          cascoon: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/268.png',
+          dustox: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/269.png'
+        },
+
+        // Realtime loader check to fallback on gorgeous custom vector drawings if network/links ever fail
+        imageErrors: {
+          wurmple: false,
+          silcoon: false,
+          cascoon: false,
+          beautifly: false,
+          dustox: false
+        },
+
+        // Configuration Profile State (Unified profile state document)
+        profile: {
+          points: 0,
+          xp: 0,
+          level: 1,
+          currentForm: 'wurmple',
+          parentPin: 'wurmple',
+          totalEarned: 0
+        },
+
+        // Primary collections
+        tasks: [],
+        inventory: [],
+        orders: [],
+
+        // Modals
+        showEvolutions: false,
+        evolutionTarget: null,
+        evolving: false,
+        showNewTaskModal: false,
+        showNewPackModal: false,
+
+        // New item builder templates
+        newTask: { name: '', rewardPoints: 10, rewardXp: 15, frequency: 'daily', icon: '📝' },
+        newPack: { name: '', cost: 100, stock: 3, theme: 'purple' },
+
+        // Toast Alerts
+        showAlert: false,
+        alertTitle: '',
+        alertMessage: '',
+        alertType: 'success',
+
+        // Init Lifecycle
+        init() {
+          window.sounds = new SoundEffects();
+          if (window.fbApp) {
+            this.connectFirebase();
+          } else {
+            window.addEventListener('firebase-ready', () => {
+              this.connectFirebase();
+            });
+            setTimeout(() => {
+              if (this.loading) {
+                this.dbMode = 'local';
+                this.loadDemoSessionData();
+                this.loading = false;
+              }
+            }, 1200);
+          }
+        },
+
+        // FIREBASE SYNCER & LISTENER INITIALIZATION
+        async connectFirebase() {
+          try {
+            if (typeof __firebase_config === 'undefined' || !__firebase_config) {
+              this.dbMode = 'local';
+              this.loadDemoSessionData();
+              this.loading = false;
+              return;
+            }
+
+            const config = JSON.parse(__firebase_config);
+            const app = window.fbApp(config);
+            const auth = window.fbAuth(app);
+            const db = window.fbGetFirestore(app);
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-summer';
+            
+            this.dbMode = 'firebase';
+
+            // RULE 3 - Authenticate FIRST
+            let userCredential;
+            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+              userCredential = await window.fbSignInWithCustomToken(auth, __initial_auth_token);
+            } else {
+              userCredential = await window.fbSignInAnonymously(auth);
+            }
+
+            this.user = userCredential.user;
+
+            // Setup snapshots with strictly parsed collections
+            this.setupFirestoreListeners(db, appId);
+          } catch (err) {
+            console.error("Firebase connection error:", err);
+            this.dbMode = 'local';
+            this.loadDemoSessionData();
+            this.loading = false;
+            this.triggerAlert("Local Mode Active", "Cloud sync was blocked or configuration is absent. App running in offline local memory successfully.", "info");
+          }
+        },
+
+        // RULE 1 - STRICT FIRESTORE SUB-COLLECTIONS SNAPSHOT BINDING
+        setupFirestoreListeners(db, appId) {
+          if (!this.user) return;
+
+          // 1. Profile Config State
+          const profileRef = window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'profile', 'state');
+          window.fbOnSnapshot(profileRef, (snap) => {
+            if (snap.exists()) {
+              this.profile = { ...this.profile, ...snap.data() };
+            } else {
+              window.fbSetDoc(profileRef, this.profile);
+            }
+          }, (err) => console.error("Profile fetch error:", err));
+
+          // 2. Tasks Checklist
+          const tasksRef = window.fbCollection(db, 'artifacts', appId, 'public', 'data', 'tasks');
+          window.fbOnSnapshot(tasksRef, (snap) => {
+            let loaded = [];
+            snap.forEach(d => loaded.push({ id: d.id, ...d.data() }));
+            if (loaded.length === 0) {
+              this.seedTasksDatabase(db, appId);
+            } else {
+              this.tasks = loaded;
+            }
+          }, (err) => console.error("Tasks fetch error:", err));
+
+          // 3. Inventory Stock
+          const invRef = window.fbCollection(db, 'artifacts', appId, 'public', 'data', 'inventory');
+          window.fbOnSnapshot(invRef, (snap) => {
+            let loaded = [];
+            snap.forEach(d => loaded.push({ id: d.id, ...d.data() }));
+            if (loaded.length === 0) {
+              this.seedInventoryDatabase(db, appId);
+            } else {
+              this.inventory = loaded;
+            }
+          }, (err) => console.error("Inventory fetch error:", err));
+
+          // 4. Claims/Orders Queue
+          const ordersRef = window.fbCollection(db, 'artifacts', appId, 'public', 'data', 'orders');
+          window.fbOnSnapshot(ordersRef, (snap) => {
+            let loaded = [];
+            snap.forEach(d => loaded.push({ id: d.id, ...d.data() }));
+            this.orders = loaded;
+            this.loading = false;
+          }, (err) => {
+            console.error("Orders fetch error:", err);
+            this.loading = false;
+          });
+        },
+
+        // LOCAL DEMO / OFFLINE BINDINGS
+        loadDemoSessionData() {
+          this.profile = {
+            points: 50,
+            xp: 80,
+            level: 1,
+            currentForm: 'wurmple',
+            parentPin: 'wurmple',
+            totalEarned: 50
+          };
+          this.tasks = [
+            { id: '1', name: 'Violin Practice 🎻', rewardPoints: 15, rewardXp: 20, frequency: 'daily', completedDates: [] },
+            { id: '2', name: 'Read for 20 Minutes 📚', rewardPoints: 10, rewardXp: 15, frequency: 'daily', completedDates: [] },
+            { id: '3', name: 'Math Worksheet / Game 🔢', rewardPoints: 12, rewardXp: 18, frequency: 'daily', completedDates: [] },
+            { id: '4', name: 'Tidy Room & Make Bed 🧹', rewardPoints: 8, rewardXp: 10, frequency: 'daily', completedDates: [] },
+            { id: '5', name: 'Finish Weekly Reading Book 📖', rewardPoints: 40, rewardXp: 60, frequency: 'weekly', completedWeeks: [] }
+          ];
+          this.inventory = [
+            { id: 'p1', name: 'Scarlet & Violet: Paldean Fates', cost: 120, stock: 3, theme: 'purple' },
+            { id: 'p2', name: 'Sword & Shield: Crown Zenith', cost: 150, stock: 2, theme: 'yellow' },
+            { id: 'p3', name: 'Scarlet & Violet: Temporal Forces', cost: 100, stock: 5, theme: 'teal' }
+          ];
+          this.orders = [];
+        },
+
+        // DATABASE SEEDING ASSISTANTS
+        async seedTasksDatabase(db, appId) {
+          const tasksRef = window.fbCollection(db, 'artifacts', appId, 'public', 'data', 'tasks');
+          const defaults = [
+            { name: 'Violin Practice 🎻', rewardPoints: 15, rewardXp: 20, frequency: 'daily', completedDates: [] },
+            { name: 'Read for 20 Minutes 📚', rewardPoints: 10, rewardXp: 15, frequency: 'daily', completedDates: [] },
+            { name: 'Math Worksheet / Game 🔢', rewardPoints: 12, rewardXp: 18, frequency: 'daily', completedDates: [] },
+            { name: 'Tidy Room & Make Bed 🧹', rewardPoints: 8, rewardXp: 10, frequency: 'daily', completedDates: [] },
+            { name: 'Finish Weekly Reading Book 📖', rewardPoints: 40, rewardXp: 60, frequency: 'weekly', completedWeeks: [] }
+          ];
+          for (const d of defaults) {
+            await window.fbAddDoc(tasksRef, d);
+          }
+        },
+
+        async seedInventoryDatabase(db, appId) {
+          const invRef = window.fbCollection(db, 'artifacts', appId, 'public', 'data', 'inventory');
+          const defaults = [
+            { name: 'Scarlet & Violet: Paldean Fates', cost: 120, stock: 3, theme: 'purple' },
+            { name: 'Sword & Shield: Crown Zenith', cost: 150, stock: 2, theme: 'yellow' },
+            { name: 'Scarlet & Violet: Temporal Forces', cost: 100, stock: 5, theme: 'teal' }
+          ];
+          for (const d of defaults) {
+            await window.fbAddDoc(invRef, d);
+          }
+        },
+
+        // DATE/TIME MATH ASSISTANTS
+        getTodayString() {
+          const d = new Date();
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        },
+
+        getCurrentWeekString() {
+          const d = new Date();
+          d.setHours(0,0,0,0);
+          d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7);
+          const w1 = new Date(d.getFullYear(), 0, 4);
+          w1.setDate(w1.getDate() + 3 - (w1.getDay() + 6) % 7);
+          const wNo = 1 + Math.round(((d.getTime() - w1.getTime()) / 86400000 - 3 + (w1.getDay() + 6) % 7) / 7);
+          return `${d.getFullYear()}-W${String(wNo).padStart(2, '0')}`;
+        },
+
+        formatDate(ts) {
+          const date = new Date(ts);
+          return date.toLocaleDateString() + ' @ ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        },
+
+        // CORE FUNCTIONALITY: TOGGLE TASK ACTIONS
+        isTaskCompletedToday(task) {
+          return task.completedDates && task.completedDates.includes(this.getTodayString());
+        },
+
+        isTaskCompletedThisWeek(task) {
+          return task.completedWeeks && task.completedWeeks.includes(this.getCurrentWeekString());
+        },
+
+        getFilteredTasks(freq) {
+          return this.tasks.filter(t => t.frequency === freq);
+        },
+
+        async toggleTaskCheck(task) {
+          const isDaily = task.frequency === 'daily';
+          const completeMark = isDaily ? this.getTodayString() : this.getCurrentWeekString();
+          const arrayKey = isDaily ? 'completedDates' : 'completedWeeks';
+          
+          const isChecked = isDaily ? this.isTaskCompletedToday(task) : this.isTaskCompletedThisWeek(task);
+
+          if (!isChecked) {
+            if (!task[arrayKey]) task[arrayKey] = [];
+            task[arrayKey].push(completeMark);
+
+            this.profile.points += task.rewardPoints;
+            this.profile.xp += task.rewardXp;
+            this.profile.totalEarned += task.rewardPoints;
+
+            await this.syncProfile();
+            await this.syncTask(task);
+
+            this.calculateAndTriggerLevelUp(task.rewardXp);
+          } else {
+            const confirmDeduct = confirm(`You already checked off this task today!\nUnchecking it will deduct ${task.rewardPoints} Coins and ${task.rewardXp} EXP. Continue?`);
+            if (confirmDeduct) {
+              task[arrayKey] = task[arrayKey].filter(x => x !== completeMark);
+              this.profile.points = Math.max(0, this.profile.points - task.rewardPoints);
+              this.profile.xp = Math.max(0, this.profile.xp - task.rewardXp);
+              
+              this.profile.level = Math.floor(this.profile.xp / 100) + 1;
+
+              await this.syncProfile();
+              await this.syncTask(task);
+              
+              this.triggerAlert("Progress Deducted", "Activity unchecked. Points and EXP updated.", "info");
+            }
+          }
+        },
+
+        calculateAndTriggerLevelUp(addedXp) {
+          const oldLevel = Math.floor((this.profile.xp - addedXp) / 100) + 1;
+          const newLevel = Math.floor(this.profile.xp / 100) + 1;
+
+          if (newLevel > oldLevel) {
+            this.profile.level = newLevel;
+            this.syncProfile();
+            
+            try {
+              sounds.playSuccess();
+            } catch(e){}
+            
+            this.triggerAlert("Level Up! 🌟", `Your Wurmple grew to Level ${newLevel}! Keep up the amazing work!`, "success");
+          } else {
+            try {
+              sounds.playSuccess();
+            } catch(e){}
+          }
+        },
+
+        // SHOP REDEMPTION CORE SYSTEM
+        async attemptPurchasePack(pack) {
+          if (this.profile.points < pack.cost) {
+            this.triggerAlert("Insufficient Balance", "You need more coins. Keep practicing and reading!", "error");
+            return;
+          }
+          if (pack.stock <= 0) {
+            this.triggerAlert("Sold Out", "This pack is out of stock. Tell your parent to add more!", "error");
+            return;
+          }
+
+          const confirmRedeem = confirm(`Do you want to spend ${pack.cost} Coins to redeem 1x [${pack.name}]?`);
+          if (!confirmRedeem) return;
+
+          this.profile.points -= pack.cost;
+          pack.stock -= 1;
+
+          const orderObj = {
+            itemName: pack.name,
+            cost: pack.cost,
+            timestamp: Date.now(),
+            status: 'pending'
+          };
+
+          if (this.dbMode === 'firebase') {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-summer';
+            const db = window.fbGetFirestore();
+            
+            const ordersCol = window.fbCollection(db, 'artifacts', appId, 'public', 'data', 'orders');
+            await window.fbAddDoc(ordersCol, orderObj);
+            
+            await window.fbUpdateDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'inventory', pack.id), { stock: pack.stock });
+          } else {
+            orderObj.id = 'ord-' + Date.now();
+            this.orders.push(orderObj);
+          }
+
+          await this.syncProfile();
+          
+          try {
+            sounds.playPurchase();
+          } catch(e){}
+
+          this.triggerAlert("Order Created! 🎉", "Booster claimed successfully! Ask Professor Parent to deliver your pack.", "success");
+        },
+
+        // DYNAMIC WURMPLE COMPANION SPEECH (THEME FOCUS)
+        getWurmpleSpeech() {
+          if (this.profile.currentForm === 'wurmple') {
+            if (this.profile.level >= 5) {
+              return "Oh my! I'm feeling a strange, funny tingling inside... I think I'm ready to build a cocoon! Click below!";
+            }
+            if (this.profile.points >= 100) {
+              return "Whoa! You have plenty of coins! Go check out the PokeShop booster packs!";
+            }
+            return "Hi! I'm Wurmple! Complete some reading, cleaning, or practice violin so we can grow together!";
+          }
+          if (this.profile.currentForm === 'silcoon' || this.profile.currentForm === 'cascoon') {
+            if (this.profile.level >= 10) {
+              return "I can hear the summer winds howling... My shell is getting ready to crack open! Let's evolve!";
+            }
+            return `Sleeping inside my cozy ${this.profile.currentForm === 'silcoon' ? 'white' : 'purple'} cocoon! Keep building points to hatch me!`;
+          }
+          return "Zuuuum! Look at me fly! I have fully evolved! You did an absolutely legendary job this summer!";
+        },
+
+        getEvolutionAdvice() {
+          const form = this.profile.currentForm;
+          const lvl = this.profile.level;
+          if (form === 'wurmple' && lvl < 5) return `🔒 Reach Level 5 to unlock cocoon evolution! (Needs ${500 - this.profile.xp} more XP)`;
+          if ((form === 'silcoon' || form === 'cascoon') && lvl < 10) return `🔒 Reach Level 10 to evolve into final form! (Needs ${1000 - this.profile.xp} more XP)`;
+          return "🎉 Congratulations! Max Evolution achieved!";
+        },
+
+        // COMPANION EVOLUTION CEREMONY ENGINE
+        canEvolve() {
+          const form = this.profile.currentForm;
+          const lvl = this.profile.level;
+          if (form === 'wurmple' && lvl >= 5) return true;
+          if ((form === 'silcoon' || form === 'cascoon') && lvl >= 10) return true;
+          return false;
+        },
+
+        async evolvePokemon() {
+          if (this.evolving) return;
+          this.evolving = true;
+
+          let nextForm = this.profile.currentForm;
+          if (this.profile.currentForm === 'wurmple') {
+            nextForm = Math.random() < 0.5 ? 'silcoon' : 'cascoon';
+          } else if (this.profile.currentForm === 'silcoon') {
+            nextForm = 'beautifly';
+          } else if (this.profile.currentForm === 'cascoon') {
+            nextForm = 'dustox';
+          }
+
+          this.evolutionTarget = nextForm;
+          this.showEvolutions = true;
+
+          try {
+            sounds.playEvolution();
+          } catch(e){}
+
+          setTimeout(async () => {
+            this.profile.currentForm = nextForm;
+            await this.syncProfile();
+            this.evolving = false;
+          }, 3000);
+        },
+
+        closeEvolutionCeremony() {
+          this.showEvolutions = false;
+          this.evolutionTarget = null;
+          this.triggerAlert("Evolution Complete! 🎉", "Your Pokémon updated to its next beautiful form!", "success");
+        },
+
+        // PROFESSOR MODE VERIFICATION & SECURITY
+        openProfessorMode() {
+          if (this.parentAuthenticated) {
+            this.currentView = 'parent';
+            this.parentActiveTab = 'deliveries';
+          } else {
+            this.currentView = 'parent';
+            this.parentPinInput = '';
+            this.pinError = false;
+          }
+        },
+
+        verifyParentPin() {
+          const targetPin = this.profile.parentPin || '';
+          if (this.parentPinInput.trim() === targetPin) {
+            this.parentAuthenticated = true;
+            this.parentActiveTab = 'deliveries';
+            this.pinError = false;
+          } else {
+            this.pinError = true;
+            this.parentPinInput = '';
+          }
+        },
+
+        lockParentMode() {
+          this.parentAuthenticated = false;
+          this.currentView = 'trainer';
+          this.activeTab = 'tasks';
+        },
+
+        // PROFESSOR ACTION: FULFILL REDEEMS
+        async deliverOrder(order) {
+          order.status = 'delivered';
+          if (this.dbMode === 'firebase') {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-summer';
+            const db = window.fbGetFirestore();
+            await window.fbUpdateDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'orders', order.id), { status: 'delivered' });
+          }
+          this.triggerAlert("Pack Delivered!", `Physical booster pack handed over and logged successfully!`, "success");
+        },
+
+        async cancelAndRefundOrder(order) {
+          const confirmRefund = confirm(`Are you sure you want to cancel this order and refund ${order.cost} Coins?`);
+          if (!confirmRefund) return;
+
+          this.profile.points += order.cost;
+
+          const matchedPack = this.inventory.find(p => p.name === order.itemName);
+          if (matchedPack) {
+            matchedPack.stock += 1;
+            if (this.dbMode === 'firebase') {
+              const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-summer';
+              const db = window.fbGetFirestore();
+              await window.fbUpdateDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'inventory', matchedPack.id), { stock: matchedPack.stock });
+            }
+          }
+
+          if (this.dbMode === 'firebase') {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-summer';
+            const db = window.fbGetFirestore();
+            await window.fbDeleteDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'orders', order.id));
+          } else {
+            this.orders = this.orders.filter(o => o.id !== order.id);
+          }
+
+          await this.syncProfile();
+          this.triggerAlert("Order Refunded", "Coins refunded and physical stock restored.", "info");
+        },
+
+        // PROFESSOR ACTION: STORE INVENTORY INSERTERS
+        openAddPackModal() {
+          this.newPack = { name: '', cost: 100, stock: 3, theme: 'purple' };
+          this.showNewPackModal = true;
+        },
+
+        async saveBoosterPack() {
+          if (!this.newPack.name.trim()) {
+            alert("Please enter a valid booster pack name!");
+            return;
+          }
+
+          const packObj = {
+            name: this.newPack.name.trim(),
+            cost: Number(this.newPack.cost) || 100,
+            stock: Number(this.newPack.stock) || 0,
+            theme: this.newPack.theme
+          };
+
+          if (this.dbMode === 'firebase') {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-summer';
+            const db = window.fbGetFirestore();
+            const invCol = window.fbCollection(db, 'artifacts', appId, 'public', 'data', 'inventory');
+            await window.fbAddDoc(invCol, packObj);
+          } else {
+            packObj.id = 'p-' + Date.now();
+            this.inventory.push(packObj);
+          }
+
+          this.showNewPackModal = false;
+          this.triggerAlert("New Pack Added", `${packObj.name} added to Pokeshop.`, "success");
+        },
+
+        async adjustStock(pack, amount) {
+          pack.stock = Math.max(0, pack.stock + amount);
+          if (this.dbMode === 'firebase') {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-summer';
+            const db = window.fbGetFirestore();
+            await window.fbUpdateDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'inventory', pack.id), { stock: pack.stock });
+          }
+        },
+
+        async deletePack(pack) {
+          const confirmDel = confirm(`Remove ${pack.name} from store entirely?`);
+          if (!confirmDel) return;
+
+          if (this.dbMode === 'firebase') {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-summer';
+            const db = window.fbGetFirestore();
+            await window.fbDeleteDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'inventory', pack.id));
+          } else {
+            this.inventory = this.inventory.filter(p => p.id !== pack.id);
+          }
+          this.triggerAlert("Pack Removed", "Pack removed from shop inventory.", "info");
+        },
+
+        // PROFESSOR ACTION: TASK INSERTERS
+        openAddTaskModal() {
+          this.newTask = { name: '', rewardPoints: 10, rewardXp: 15, frequency: 'daily', icon: '📝' };
+          this.showNewTaskModal = true;
+        },
+
+        async saveCustomTask() {
+          if (!this.newTask.name.trim()) {
+            alert("Please enter an activity task name!");
+            return;
+          }
+
+          const taskObj = {
+            name: this.newTask.name.trim(),
+            rewardPoints: Number(this.newTask.rewardPoints) || 10,
+            rewardXp: Number(this.newTask.rewardXp) || 15,
+            frequency: this.newTask.frequency,
+            icon: this.newTask.icon,
+            completedDates: [],
+            completedWeeks: []
+          };
+
+          if (this.dbMode === 'firebase') {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-summer';
+            const db = window.fbGetFirestore();
+            const tasksCol = window.fbCollection(db, 'artifacts', appId, 'public', 'data', 'tasks');
+            await window.fbAddDoc(tasksCol, taskObj);
+          } else {
+            taskObj.id = 'tsk-' + Date.now();
+            this.tasks.push(taskObj);
+          }
+
+          this.showNewTaskModal = false;
+          this.triggerAlert("Custom Task Created", `"${taskObj.name}" is now live on the checklist!`, "success");
+        },
+
+        async deleteTask(task) {
+          const confirmDel = confirm(`Delete the task: "${task.name}"?`);
+          if (!confirmDel) return;
+
+          if (this.dbMode === 'firebase') {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-summer';
+            const db = window.fbGetFirestore();
+            await window.fbDeleteDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'tasks', task.id));
+          } else {
+            this.tasks = this.tasks.filter(t => t.id !== task.id);
+          }
+          this.triggerAlert("Task Deleted", "Activity removed from checklist.", "info");
+        },
+
+        // PROFESSOR ACTION: WALLET BONUSES
+        async awardCoins() {
+          const valInput = document.getElementById('giftCoinsInput');
+          const amt = Number(valInput.value);
+          if (!amt || amt <= 0) {
+            alert("Please enter a positive coin amount!");
+            return;
+          }
+
+          this.profile.points += amt;
+          this.profile.totalEarned += amt;
+          await this.syncProfile();
+
+          valInput.value = '';
+          this.triggerAlert("Coins Gifted! 🎁", `Successfully gifted +${amt} Bonus Coins to your son!`, "success");
+        },
+
+        async overrideForm(newForm) {
+          this.profile.currentForm = newForm;
+          await this.syncProfile();
+          this.triggerAlert("Companion Form Updated", `Wurmple was modified to ${newForm.toUpperCase()}!`, "success");
+        },
+
+        async updatePin() {
+          const pinVal = document.getElementById('newPinInput').value.trim();
+          if (!pinVal) {
+            alert("Please enter a valid PIN!");
+            return;
+          }
+          this.profile.parentPin = pinVal;
+          await this.syncProfile();
+          document.getElementById('newPinInput').value = '';
+          this.triggerAlert("PIN Updated", "Parent access protection PIN updated.", "success");
+        },
+
+        async forceTasksReset() {
+          const confirmReset = confirm("Are you sure you want to wipe all task checkmarks? (This will NOT deduct existing coins)");
+          if (!confirmReset) return;
+
+          for (const t of this.tasks) {
+            t.completedDates = [];
+            t.completedWeeks = [];
+            await this.syncTask(t);
+          }
+          this.triggerAlert("Task Checklist Reset", "All daily and weekly activities have been cleared.", "success");
+        },
+
+        async factoryReset() {
+          const confirmReset = confirm("⚠️ CRITICAL ACTION: Wipe all custom tasks, reset level progress, clear purchases, and reload default inventory settings?");
+          if (!confirmReset) return;
+
+          this.profile = {
+            points: 0,
+            xp: 0,
+            level: 1,
+            currentForm: 'wurmple',
+            parentPin: 'wurmple',
+            totalEarned: 0
+          };
+
+          if (this.dbMode === 'firebase') {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-summer';
+            const db = window.fbGetFirestore();
+            
+            await window.fbSetDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'profile', 'state'), this.profile);
+
+            for (const t of this.tasks) {
+              await window.fbDeleteDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'tasks', t.id));
+            }
+            for (const p of this.inventory) {
+              await window.fbDeleteDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'inventory', p.id));
+            }
+            for (const o of this.orders) {
+              await window.fbDeleteDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'orders', o.id));
+            }
+            
+            this.seedTasksDatabase(db, appId);
+            this.seedInventoryDatabase(db, appId);
+          } else {
+            this.loadDemoSessionData();
+          }
+
+          this.triggerAlert("Wiped & Cleared", "Database restored to summer configurations successfully.", "info");
+        },
+
+        // DYNAMIC UTILITIES
+        getPendingOrdersCount() {
+          return this.orders.filter(o => o.status === 'pending').length;
+        },
+
+        getSortedOrders() {
+          return [...this.orders].sort((a,b) => b.timestamp - a.timestamp);
+        },
+
+        // SYNC TO DATASTORES WRAPPERS
+        async syncProfile() {
+          if (this.dbMode === 'firebase') {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-summer';
+            const db = window.fbGetFirestore();
+            await window.fbSetDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'profile', 'state'), this.profile, { merge: true });
+          }
+        },
+
+        async syncTask(task) {
+          if (this.dbMode === 'firebase') {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-summer';
+            const db = window.fbGetFirestore();
+            await window.fbUpdateDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'tasks', task.id), {
+              completedDates: task.completedDates || [],
+              completedWeeks: task.completedWeeks || []
+            });
+          }
+        },
+
+        triggerAlert(title, message, type = 'success') {
+          this.alertTitle = title;
+          this.alertMessage = message;
+          this.alertType = type;
+          this.showAlert = true;
+          setTimeout(() => {
+            this.showAlert = false;
+          }, 5000);
+        }
+      };
+    };
+  </script>
+
+  <!-- Alpine.js (Loads deferred, guaranteed to execute after our global window.summerApp and SoundEffects are registered) -->
+  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="bg-gradient-to-b from-emerald-50 via-green-100 to-emerald-200 min-h-screen relative overflow-x-hidden">
+
+  <!-- Floating Forest Leaves Background Decor -->
+  <div class="absolute inset-0 overflow-hidden pointer-events-none z-0">
+    <div class="floating-leaf text-emerald-400 opacity-30 text-xl" style="top: 15%; left: 5%; animation-delay: 0s;">🍃</div>
+    <div class="floating-leaf text-green-400 opacity-20 text-2xl" style="top: 45%; left: 88%; animation-delay: 2.5s;">🍂</div>
+    <div class="floating-leaf text-emerald-300 opacity-35 text-lg" style="top: 75%; left: 12%; animation-delay: 1.2s;">🌿</div>
+    <div class="floating-leaf text-green-300 opacity-25 text-xl" style="top: 30%; left: 75%; animation-delay: 3.7s;">🌱</div>
+  </div>
+
+  <div id="app" x-data="summerApp()" class="relative z-10 max-w-6xl mx-auto px-4 py-6" x-cloak>
+    
+    <!-- Top Header -->
+    <header class="flex flex-col md:flex-row justify-between items-center bg-white bg-opacity-95 rounded-2xl p-4 shadow-lg border-2 border-emerald-400 mb-6 gap-4">
+      <div class="flex items-center gap-4">
+        <!-- Mascot Indicator (with smart fallback to emojis if PNG load fails) -->
+        <div class="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center border-2 border-emerald-300 overflow-hidden shrink-0">
+          <template x-if="!imageErrors[profile.currentForm]">
+            <img :src="pokemonImages[profile.currentForm]" 
+                 @error="imageErrors[profile.currentForm] = true" 
+                 class="w-14 h-14 object-contain" 
+                 alt="Mascot Icon">
+          </template>
+          <template x-if="imageErrors[profile.currentForm]">
+            <span>
+              <template x-if="profile.currentForm === 'wurmple'"><span class="text-4xl">🐛</span></template>
+              <template x-if="profile.currentForm === 'silcoon'"><span class="text-4xl">🥚</span></template>
+              <template x-if="profile.currentForm === 'cascoon'"><span class="text-4xl">🟣</span></template>
+              <template x-if="profile.currentForm === 'beautifly'"><span class="text-4xl">🦋</span></template>
+              <template x-if="profile.currentForm === 'dustox'"><span class="text-4xl">🐝</span></template>
+            </span>
+          </template>
+        </div>
+        <div>
+          <h1 class="pokemon-title text-2xl md:text-3xl lg:text-4xl text-emerald-800 tracking-wider leading-none">
+            Wurmple's Adventure
+          </h1>
+          <p class="text-xs text-gray-500 font-semibold mt-1" x-text="dbMode === 'firebase' ? '🌐 Connected & Synced with Cloud' : '⚠️ Offline/Demo (Saving inside Session)'"></p>
+        </div>
+      </div>
+
+      <!-- Stats Bar -->
+      <div class="flex flex-wrap items-center gap-3 md:gap-6 w-full md:w-auto justify-end">
+        <div class="flex items-center bg-amber-50 border-2 border-amber-300 px-3.5 py-1.5 rounded-full shadow-sm text-amber-700 font-extrabold animate-bounce" style="animation-duration: 3s;">
+          <div class="w-6 h-6 bg-amber-400 rounded-full border-2 border-amber-600 flex items-center justify-center text-xs text-amber-950 font-black mr-2">C</div>
+          <span class="text-lg tracking-wide"><span x-text="profile.points"></span> <span class="text-xs font-bold text-amber-600">Coins</span></span>
+        </div>
+
+        <div class="flex flex-col items-end">
+          <div class="flex items-center gap-1.5 font-bold text-emerald-800 text-sm">
+            <span>Level <span x-text="profile.level"></span></span>
+            <span class="text-xs text-emerald-600 italic">(XP: <span x-text="profile.xp % 100"></span>/100)</span>
+          </div>
+          <div class="w-36 h-2.5 bg-gray-200 rounded-full border border-gray-300 overflow-hidden mt-1">
+            <div class="h-full bg-gradient-to-r from-green-400 to-emerald-500 rounded-full transition-all duration-300" :style="`width: ${profile.xp % 100}%`"></div>
+          </div>
+        </div>
+
+        <!-- Mode Toggle -->
+        <div class="flex border-2 border-emerald-500 rounded-xl overflow-hidden bg-white shadow-sm shrink-0">
+          <button @click="currentView = 'trainer'; activeTab = 'tasks'" 
+                  class="px-3.5 py-1.5 text-xs font-bold transition-all flex items-center gap-1"
+                  :class="currentView === 'trainer' ? 'bg-emerald-500 text-white' : 'text-emerald-700 hover:bg-emerald-50'">
+            <i class="fa-solid fa-backpack"></i> Trainer Dashboard
+          </button>
+          <button @click="openProfessorMode()" 
+                  class="px-3.5 py-1.5 text-xs font-bold transition-all flex items-center gap-1"
+                  :class="currentView === 'parent' ? 'bg-red-500 text-white' : 'text-red-700 hover:bg-red-50'">
+            <i class="fa-solid fa-flask-vial"></i> Professor Panel
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- LOADING SCREEN -->
+    <div x-show="loading" class="flex flex-col items-center justify-center py-20 bg-white bg-opacity-80 rounded-2xl border-2 border-dashed border-emerald-300 shadow-md">
+      <div class="relative w-24 h-24 mb-4">
+        <svg class="animate-spin w-full h-full text-emerald-500" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" stroke-width="8" stroke-dasharray="100 50" />
+        </svg>
+        <span class="absolute inset-0 flex items-center justify-center text-2xl">🐛</span>
+      </div>
+      <p class="text-emerald-800 font-bold pokemon-title">Gathering Wurmples... Just a moment!</p>
+    </div>
+
+    <!-- MAIN DASHBOARD -->
+    <div x-show="!loading" class="space-y-6">
+      
+      <!-- TRAINER DASHBOARD (SON'S MODE) -->
+      <div x-show="currentView === 'trainer'" class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- Companion & Evolution Hub -->
+        <div class="lg:col-span-4 flex flex-col gap-6">
+          <div class="bg-gradient-to-br from-red-50 to-cream-50 bg-white rounded-3xl p-5 shadow-lg border-2 border-red-200 flex flex-col items-center text-center relative overflow-hidden">
+            <div class="absolute top-0 inset-x-0 h-2 bg-gradient-to-r from-red-500 via-yellow-400 to-red-600"></div>
+
+            <span class="text-xs font-bold text-red-500 mt-2 uppercase tracking-widest bg-red-100 px-2.5 py-1 rounded-full">Your Companion</span>
+            
+            <!-- Dialogue Balloon -->
+            <div class="bg-white border-2 border-gray-300 rounded-2xl p-3 shadow-md text-sm mt-4 text-gray-700 relative w-full font-semibold">
+              <div class="absolute bottom-[-8px] left-1/2 transform -translate-x-1/2 w-3 h-3 bg-white border-b-2 border-r-2 border-gray-300 rotate-45"></div>
+              <p x-text="getWurmpleSpeech()"></p>
+            </div>
+
+            <!-- Companion Media (Dynamic PNG artwork with smart vector fallbacks) -->
+            <div class="my-6 relative w-48 h-48 flex items-center justify-center rounded-full p-2 bg-emerald-50 border-4 border-dashed border-emerald-200 overflow-hidden">
+              <template x-if="!imageErrors[profile.currentForm]">
+                <img :src="pokemonImages[profile.currentForm]" 
+                     @error="imageErrors[profile.currentForm] = true" 
+                     class="w-40 h-40 object-contain drop-shadow-xl transform hover:scale-110 transition-transform duration-300" 
+                     alt="Pokémon Companion">
+              </template>
+              
+              <template x-if="imageErrors[profile.currentForm]">
+                <div class="w-full h-full flex items-center justify-center">
+                  <!-- Wurmple form vector fallback -->
+                  <template x-if="profile.currentForm === 'wurmple'">
+                    <svg viewBox="0 0 120 120" class="w-40 h-40 drop-shadow-lg transform hover:scale-105 transition-transform">
+                      <circle cx="85" cy="70" r="16" fill="#EF4444" stroke="#1F2937" stroke-width="3.5" />
+                      <polygon points="98,60 109,51 101,68" fill="#FBBF24" stroke="#1F2937" stroke-width="2" />
+                      <polygon points="95,74 107,81 95,85" fill="#FBBF24" stroke="#1F2937" stroke-width="2" />
+                      <circle cx="85" cy="86" r="5" fill="#FFF" stroke="#1F2937" stroke-width="2.5" />
+                      <circle cx="70" cy="88" r="5" fill="#FFF" stroke="#1F2937" stroke-width="2.5" />
+                      <circle cx="68" cy="65" r="19" fill="#EF4444" stroke="#1F2937" stroke-width="3.5" />
+                      <polygon points="68,46 68,36 75,44" fill="#EF4444" stroke="#1F2937" stroke-width="2.5" />
+                      <circle cx="55" cy="88" r="5" fill="#FFF" stroke="#1F2937" stroke-width="2.5" />
+                      <circle cx="45" cy="55" r="23" fill="#EF4444" stroke="#1F2937" stroke-width="3.5" />
+                      <polygon points="40,32 45,10 52,32" fill="#FBBF24" stroke="#1F2937" stroke-width="3.5" />
+                      <polygon points="56,38 65,22 62,40" fill="#EF4444" stroke="#1F2937" stroke-width="2" />
+                      <path d="M 23,55 A 19,19 0 0,0 52,70 L 52,49 A 19,19 0 0,0 23,55" fill="#FEF08A" stroke="#1F2937" stroke-width="3" />
+                      <circle cx="31" cy="52" r="5.5" fill="#FBBF24" stroke="#1F2937" stroke-width="2.5" />
+                      <circle cx="32" cy="52" r="2" fill="#1F2937" />
+                      <ellipse cx="27" cy="61" rx="3.5" ry="2.5" fill="#F87171" opacity="0.7" />
+                      <circle cx="40" cy="78" r="5" fill="#FFF" stroke="#1F2937" stroke-width="2.5" />
+                    </svg>
+                  </template>
+
+                  <!-- Silcoon form vector fallback -->
+                  <template x-if="profile.currentForm === 'silcoon'">
+                    <svg viewBox="0 0 120 120" class="w-40 h-40 drop-shadow-lg transform hover:scale-105 transition-transform">
+                      <ellipse cx="60" cy="60" rx="36" ry="29" fill="#F9FAFB" stroke="#1F2937" stroke-width="4" />
+                      <path d="M 24,60 L 6,60 M 96,60 L 114,60 M 60,31 L 60,11 M 60,89 L 60,109 M 35,37 L 18,22 M 85,37 L 102,22 M 35,83 L 19,98 M 85,83 L 101,98" stroke="#D1D5DB" stroke-width="3" stroke-linecap="round" />
+                      <path d="M 24,60 L 10,60 M 96,60 L 110,60 M 60,31 L 60,15 M 60,89 L 60,105 M 35,37 L 20,25 M 85,37 L 100,25" stroke="#1F2937" stroke-width="3.5" stroke-linecap="round" />
+                      <circle cx="48" cy="60" r="5" fill="#EC4899" />
+                      <circle cx="48" cy="60" r="1.5" fill="#FFF" />
+                      <circle cx="72" cy="60" r="5" fill="#EC4899" />
+                      <circle cx="72" cy="60" r="1.5" fill="#FFF" />
+                      <path d="M 40,52 Q 48,55 56,52" fill="none" stroke="#D1D5DB" stroke-width="1.5" />
+                      <path d="M 64,52 Q 72,55 80,52" fill="none" stroke="#D1D5DB" stroke-width="1.5" />
+                    </svg>
+                  </template>
+
+                  <!-- Cascoon form vector fallback -->
+                  <template x-if="profile.currentForm === 'cascoon'">
+                    <svg viewBox="0 0 120 120" class="w-40 h-40 drop-shadow-lg transform hover:scale-105 transition-transform">
+                      <ellipse cx="60" cy="60" rx="36" ry="29" fill="#D8B4FE" stroke="#1F2937" stroke-width="4" />
+                      <path d="M 24,60 L 5,60 M 96,60 L 115,60 M 60,31 L 60,10 M 60,89 L 60,110 M 35,37 L 16,21 M 85,37 L 104,21" stroke="#A78BFA" stroke-width="3.5" stroke-linecap="round" />
+                      <path d="M 24,60 L 11,60 M 96,60 L 109,60 M 60,31 L 60,16 M 60,89 L 60,104" stroke="#1F2937" stroke-width="3.5" stroke-linecap="round" />
+                      <circle cx="48" cy="60" r="5" fill="#A3E635" stroke="#1F2937" stroke-width="1.5" />
+                      <circle cx="48" cy="60" r="1.5" fill="#FFF" />
+                      <circle cx="72" cy="60" r="5" fill="#A3E635" stroke="#1F2937" stroke-width="1.5" />
+                      <circle cx="72" cy="60" r="1.5" fill="#FFF" />
+                    </svg>
+                  </template>
+
+                  <!-- Beautifly form vector fallback -->
+                  <template x-if="profile.currentForm === 'beautifly'">
+                    <svg viewBox="0 0 120 120" class="w-40 h-40 drop-shadow-lg transform hover:scale-105 transition-transform">
+                      <path d="M 60,60 C 15,15 5,35 15,70 C 22,86 42,86 60,60" fill="#1F2937" stroke="#1F2937" stroke-width="3.5" />
+                      <path d="M 54,54 C 25,25 15,40 25,64 C 29,71 42,76 54,54" fill="#FBBF24" />
+                      <circle cx="32" cy="46" r="6" fill="#EF4444" />
+                      <circle cx="40" cy="58" r="4.5" fill="#3B82F6" />
+                      
+                      <path d="M 60,60 C 105,15 115,35 105,70 C 98,86 78,86 60,60" fill="#1F2937" stroke="#1F2937" stroke-width="3.5" />
+                      <path d="M 66,54 C 95,25 105,40 95,64 C 91,71 78,76 66,54" fill="#FBBF24" />
+                      <circle cx="88" cy="46" r="6" fill="#EF4444" />
+                      <circle cx="80" cy="58" r="4.5" fill="#3B82F6" />
+
+                      <ellipse cx="60" cy="60" rx="7" ry="20" fill="#4B5563" stroke="#1F2937" stroke-width="3" />
+                      <circle cx="60" cy="38" r="9" fill="#4B5563" stroke="#1F2937" stroke-width="3" />
+                      <circle cx="56" cy="36" r="3.5" fill="#60A5FA" />
+                      <circle cx="64" cy="36" r="3.5" fill="#60A5FA" />
+                      <path d="M 60,45 Q 60,54 55,54 Q 51,54 51,49 Q 51,45 55,45" fill="none" stroke="#1F2937" stroke-width="2" />
+                    </svg>
+                  </template>
+
+                  <!-- Dustox form vector fallback -->
+                  <template x-if="profile.currentForm === 'dustox'">
+                    <svg viewBox="0 0 120 120" class="w-40 h-40 drop-shadow-lg transform hover:scale-105 transition-transform">
+                      <path d="M 60,55 C 15,35 5,45 25,80 C 35,92 52,78 60,55" fill="#10B981" stroke="#1F2937" stroke-width="3.5" />
+                      <circle cx="36" cy="64" r="5.5" fill="#EC4899" />
+                      
+                      <path d="M 60,55 C 105,35 115,45 95,80 C 85,92 68,78 60,55" fill="#10B981" stroke="#1F2937" stroke-width="3.5" />
+                      <circle cx="84" cy="64" r="5.5" fill="#EC4899" />
+
+                      <ellipse cx="60" cy="62" rx="9" ry="20" fill="#F97316" stroke="#1F2937" stroke-width="3" />
+                      <circle cx="60" cy="41" r="8" fill="#F97316" stroke="#1F2937" stroke-width="3" />
+                      <circle cx="56" cy="39" r="4.2" fill="#EC4899" stroke="#1F2937" stroke-width="1" />
+                      <circle cx="64" cy="39" r="4.2" fill="#EC4899" stroke="#1F2937" stroke-width="1" />
+                      <path d="M 57,34 Q 42,20 31,23 M 63,34 Q 78,20 89,23" fill="none" stroke="#FBBF24" stroke-width="2.5" stroke-linecap="round" />
+                    </svg>
+                  </template>
+                </div>
+              </template>
+            </div>
+
+            <!-- Evolutionary Title Display -->
+            <div class="mb-4">
+              <h3 class="pokemon-title text-2xl font-bold text-gray-800 capitalize" x-text="profile.currentForm"></h3>
+              <p class="text-xs text-gray-500 font-bold">Worm Pokémon • No. 0265</p>
+            </div>
+
+            <!-- Evolve Button -->
+            <template x-if="canEvolve()">
+              <button @click="evolvePokemon()" 
+                      class="w-full bg-gradient-to-r from-yellow-400 via-orange-400 to-red-500 hover:from-yellow-500 hover:to-red-600 text-white font-black py-3 px-6 rounded-2xl shadow-md border-2 border-white transform hover:scale-105 active:scale-95 transition-all animate-pulse flex items-center justify-center gap-2">
+                <i class="fa-solid fa-sparkles"></i> EVOLVE WURMPLE! <i class="fa-solid fa-sparkles"></i>
+              </button>
+            </template>
+            <template x-if="!canEvolve()">
+              <div class="w-full bg-gray-100 text-gray-400 text-xs font-semibold py-2 px-4 rounded-xl border border-gray-200"
+                   x-text="getEvolutionAdvice()">
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- Summer Operations Panel -->
+        <div class="lg:col-span-8 flex flex-col gap-6">
+          <!-- Category Tabs -->
+          <div class="flex bg-white p-1 rounded-2xl shadow-md border-2 border-emerald-200">
+            <button @click="activeTab = 'tasks'" 
+                    class="flex-1 py-3 text-sm md:text-base font-extrabold rounded-xl transition-all flex items-center justify-center gap-2"
+                    :class="activeTab === 'tasks' ? 'bg-emerald-500 text-white shadow-sm' : 'text-emerald-700 hover:bg-emerald-50'">
+              <i class="fa-solid fa-calendar-check"></i> Summer Tasks
+            </button>
+            <button @click="activeTab = 'shop'" 
+                    class="flex-1 py-3 text-sm md:text-base font-extrabold rounded-xl transition-all flex items-center justify-center gap-2"
+                    :class="activeTab === 'shop' ? 'bg-emerald-500 text-white shadow-sm' : 'text-emerald-700 hover:bg-emerald-50'">
+              <i class="fa-solid fa-store"></i> PokeShop Store
+            </button>
+            <button @click="activeTab = 'backpack'" 
+                    class="flex-1 py-3 text-sm md:text-base font-extrabold rounded-xl transition-all flex items-center justify-center gap-2"
+                    :class="activeTab === 'backpack' ? 'bg-emerald-500 text-white shadow-sm' : 'text-emerald-700 hover:bg-emerald-50'">
+              <i class="fa-solid fa-ticket"></i> Claims & Logs
+            </button>
+          </div>
+
+          <!-- TAB 1: TASKS CHECKLIST -->
+          <div x-show="activeTab === 'tasks'" class="space-y-6">
+            <!-- Daily activities -->
+            <div class="bg-white rounded-3xl p-6 shadow-lg border-2 border-emerald-300">
+              <div class="flex justify-between items-center border-b border-gray-100 pb-3 mb-4">
+                <h3 class="pokemon-title text-lg text-emerald-800 flex items-center gap-2">
+                  <i class="fa-solid fa-sun text-amber-500 animate-spin" style="animation-duration: 10s;"></i> Daily Activities
+                </h3>
+                <span class="text-xs bg-emerald-100 text-emerald-800 font-bold px-2 py-1 rounded-full">Resets Every Midnight</span>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <template x-for="task in getFilteredTasks('daily')" :key="task.id">
+                  <div class="border-2 rounded-2xl p-4 flex justify-between items-center transition-all bg-white hover:border-emerald-300"
+                       :class="isTaskCompletedToday(task) ? 'bg-emerald-50 bg-opacity-70 border-emerald-400' : 'border-gray-200'">
+                    <div class="flex items-center gap-3">
+                      <span class="text-3xl" x-text="task.icon || '📝'"></span>
+                      <div>
+                        <h4 class="font-bold text-gray-800 text-sm md:text-base" :class="isTaskCompletedToday(task) ? 'line-through text-gray-400' : ''" x-text="task.name"></h4>
+                        <div class="flex items-center gap-2 mt-1">
+                          <span class="text-[10px] md:text-xs text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-bold">
+                            +<span x-text="task.rewardPoints"></span> Coins
+                          </span>
+                          <span class="text-[10px] md:text-xs text-green-600 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded font-bold">
+                            +<span x-text="task.rewardXp"></span> EXP
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <button @click="toggleTaskCheck(task)" 
+                            class="w-10 h-10 rounded-full flex items-center justify-center border-3 transition-transform active:scale-90"
+                            :class="isTaskCompletedToday(task) ? 'bg-emerald-500 border-emerald-600 text-white' : 'border-gray-300 hover:border-emerald-400 hover:bg-emerald-50 bg-white'">
+                      <i class="fa-solid fa-check text-lg" x-show="isTaskCompletedToday(task)"></i>
+                    </button>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- Weekly challenges -->
+            <div class="bg-white rounded-3xl p-6 shadow-lg border-2 border-emerald-300">
+              <div class="flex justify-between items-center border-b border-gray-100 pb-3 mb-4">
+                <h3 class="pokemon-title text-lg text-emerald-800 flex items-center gap-2">
+                  <i class="fa-solid fa-calendar-days text-emerald-600"></i> Weekly Challenges
+                </h3>
+                <span class="text-xs bg-emerald-100 text-emerald-800 font-bold px-2 py-1 rounded-full">Resets Every Sunday</span>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <template x-for="task in getFilteredTasks('weekly')" :key="task.id">
+                  <div class="border-2 rounded-2xl p-4 flex justify-between items-center transition-all bg-white hover:border-emerald-300"
+                       :class="isTaskCompletedThisWeek(task) ? 'bg-emerald-50 bg-opacity-70 border-emerald-400' : 'border-gray-200'">
+                    <div class="flex items-center gap-3">
+                      <span class="text-3xl" x-text="task.icon || '📖'"></span>
+                      <div>
+                        <h4 class="font-bold text-gray-800 text-sm md:text-base" :class="isTaskCompletedThisWeek(task) ? 'line-through text-gray-400' : ''" x-text="task.name"></h4>
+                        <div class="flex items-center gap-2 mt-1">
+                          <span class="text-[10px] md:text-xs text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-bold">
+                            +<span x-text="task.rewardPoints"></span> Coins
+                          </span>
+                          <span class="text-[10px] md:text-xs text-green-600 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded font-bold">
+                            +<span x-text="task.rewardXp"></span> EXP
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <button @click="toggleTaskCheck(task)" 
+                            class="w-10 h-10 rounded-full flex items-center justify-center border-3 transition-transform active:scale-90"
+                            :class="isTaskCompletedThisWeek(task) ? 'bg-emerald-500 border-emerald-600 text-white' : 'border-gray-300 hover:border-emerald-400 hover:bg-emerald-50 bg-white'">
+                      <i class="fa-solid fa-check text-lg" x-show="isTaskCompletedThisWeek(task)"></i>
+                    </button>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 2: POKESHOP STORE -->
+          <div x-show="activeTab === 'shop'" class="space-y-6">
+            <div class="bg-white rounded-3xl p-6 shadow-lg border-2 border-emerald-300">
+              <div class="border-b border-gray-100 pb-3 mb-6 flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+                <div>
+                  <h3 class="pokemon-title text-lg text-emerald-800 flex items-center gap-2">
+                    <i class="fa-solid fa-store text-amber-500"></i> Pokémon Booster Store
+                  </h3>
+                  <p class="text-xs text-gray-500 font-semibold">Spend your Wurmple Coins here to buy physical booster packs!</p>
+                </div>
+                <div class="bg-amber-100 border border-amber-300 text-amber-800 px-3 py-1 rounded-lg text-xs font-bold self-start">
+                  Wallet Balance: <span x-text="profile.points"></span> Coins
+                </div>
+              </div>
+
+              <!-- Pack Grid -->
+              <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+                <template x-for="pack in inventory" :key="pack.id">
+                  <div class="bg-white border-2 border-gray-200 rounded-2xl overflow-hidden shadow-md flex flex-col justify-between transition-all hover:shadow-lg hover:border-emerald-400">
+                    <div class="relative h-44 flex flex-col justify-between p-3 text-white"
+                         :class="{
+                           'bg-gradient-to-br from-red-600 via-rose-500 to-red-800': pack.theme === 'red',
+                           'bg-gradient-to-br from-blue-600 via-sky-500 to-blue-800': pack.theme === 'blue',
+                           'bg-gradient-to-br from-purple-600 via-indigo-500 to-purple-800': pack.theme === 'purple',
+                           'bg-gradient-to-br from-emerald-600 via-teal-500 to-emerald-800': pack.theme === 'green',
+                           'bg-gradient-to-br from-amber-500 via-yellow-400 to-yellow-600 text-amber-950': pack.theme === 'yellow',
+                           'bg-gradient-to-br from-cyan-600 via-teal-500 to-teal-800': pack.theme === 'teal'
+                         }">
+                      <div class="absolute inset-0 pack-shine opacity-10 pointer-events-none"></div>
+
+                      <div class="flex justify-between items-start z-10">
+                        <span class="text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded bg-black bg-opacity-30"
+                              :class="pack.theme === 'yellow' ? 'text-amber-900 bg-amber-100 bg-opacity-65' : 'text-yellow-300'">
+                          BOOSTER PACK
+                        </span>
+                        <span class="text-[10px] font-extrabold px-2 py-0.5 rounded-full"
+                              :class="pack.stock > 0 ? 'bg-green-500 bg-opacity-90 text-white' : 'bg-red-500 text-white'">
+                          In Stock: <span x-text="pack.stock"></span>
+                        </span>
+                      </div>
+
+                      <div class="flex justify-center my-1 z-10 opacity-80">
+                        <svg class="w-16 h-16" viewBox="0 0 100 100" fill="currentColor">
+                          <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" stroke-width="7" />
+                          <path d="M 5,50 A 45,45 0 0,1 95,50 Z" opacity="0.3" />
+                          <line x1="5" y1="50" x2="95" y2="50" stroke="currentColor" stroke-width="7" />
+                          <circle cx="50" cy="50" r="16" />
+                          <circle cx="50" cy="50" r="12" fill="#fff" />
+                          <circle cx="50" cy="50" r="6" stroke="currentColor" stroke-width="2" />
+                        </svg>
+                      </div>
+
+                      <div class="text-center z-10">
+                        <h4 class="font-extrabold text-sm tracking-wide leading-tight line-clamp-1 text-shadow-sm" x-text="pack.name"></h4>
+                      </div>
+                    </div>
+
+                    <div class="p-4 bg-gray-50 border-t border-gray-100 flex flex-col gap-3">
+                      <div class="flex justify-between items-center">
+                        <span class="text-xs text-gray-500 font-bold">Store Price</span>
+                        <span class="font-black text-emerald-700 text-lg flex items-center gap-1">
+                          <span class="inline-block w-3.5 h-3.5 bg-amber-400 rounded-full border border-amber-600"></span>
+                          <span x-text="pack.cost"></span> Coins
+                        </span>
+                      </div>
+
+                      <button @click="attemptPurchasePack(pack)" 
+                              class="w-full text-xs font-extrabold py-2 px-3 rounded-xl border-2 transition-all"
+                              :class="pack.stock > 0 && profile.points >= pack.cost ? 'bg-amber-400 border-amber-500 text-amber-950 hover:bg-amber-500 active:scale-95' : 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed'"
+                              :disabled="pack.stock <= 0 || profile.points < pack.cost">
+                        <template x-if="pack.stock <= 0">
+                          <span>🚫 Out of Stock</span>
+                        </template>
+                        <template x-if="pack.stock > 0 && profile.points < pack.cost">
+                          <span>🔒 Need <span x-text="pack.cost - profile.points"></span> More Coins</span>
+                        </template>
+                        <template x-if="pack.stock > 0 && profile.points >= pack.cost">
+                          <span>🛒 Buy Pack Booster!</span>
+                        </template>
+                      </button>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 3: REDEMPTION CLAIMS -->
+          <div x-show="activeTab === 'backpack'" class="space-y-6">
+            <div class="bg-white rounded-3xl p-6 shadow-lg border-2 border-emerald-300">
+              <div class="border-b border-gray-100 pb-3 mb-4">
+                <h3 class="pokemon-title text-lg text-emerald-800 flex items-center gap-2">
+                  <i class="fa-solid fa-gift text-red-500"></i> My Booster Claim Tickets
+                </h3>
+                <p class="text-xs text-gray-500 font-semibold">Every time you buy a pack, a ticket is created. Show these to Mom/Dad to get your physical cards!</p>
+              </div>
+
+              <template x-if="orders.length === 0">
+                <div class="text-center py-12 text-gray-400">
+                  <i class="fa-solid fa-ticket text-5xl mb-3 block"></i>
+                  <p class="font-semibold text-sm">No claims yet. Complete activities to buy a booster pack!</p>
+                </div>
+              </template>
+              <template x-if="orders.length > 0">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <template x-for="order in getSortedOrders()" :key="order.id">
+                    <div class="border-2 rounded-2xl p-4 flex flex-col justify-between transition-all bg-white relative overflow-hidden"
+                         :class="order.status === 'pending' ? 'border-amber-300 bg-amber-50 bg-opacity-30' : 'border-gray-200 bg-gray-50 bg-opacity-50'">
+                      <div class="absolute top-1/2 left-0 transform -translate-y-1/2 -translate-x-1.5 w-3 h-6 bg-white rounded-r-full border-r-2 border-t-2 border-b-2 border-gray-200"></div>
+                      <div class="absolute top-1/2 right-0 transform -translate-y-1/2 translate-x-1.5 w-3 h-6 bg-white rounded-l-full border-l-2 border-t-2 border-b-2 border-gray-200"></div>
+
+                      <div class="flex justify-between items-start mb-3">
+                        <div>
+                          <h4 class="font-bold text-gray-800 text-sm md:text-base pr-4" x-text="order.itemName"></h4>
+                          <span class="text-[10px] text-gray-500 font-medium" x-text="formatDate(order.timestamp)"></span>
+                        </div>
+                        <span class="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full shrink-0 border"
+                              :class="order.status === 'pending' ? 'bg-amber-100 border-amber-200 text-amber-700 animate-pulse' : 'bg-green-100 border-green-200 text-green-700'">
+                          <i class="fa-solid mr-1" :class="order.status === 'pending' ? 'fa-clock' : 'fa-check-circle'"></i>
+                          <span x-text="order.status"></span>
+                        </span>
+                      </div>
+
+                      <div class="flex justify-between items-center pt-2 border-t border-dashed border-gray-200 text-xs text-gray-500 font-bold">
+                        <span>Cost: <span x-text="order.cost"></span> Coins</span>
+                        <span class="text-emerald-700" x-show="order.status === 'delivered'">Fulfill Date: Handed Over! 🎉</span>
+                        <span class="text-amber-700" x-show="order.status === 'pending'">Pending Handover...</span>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </template>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- PROFESSOR CONTROL CENTER (PARENT VIEW) -->
+      <div x-show="currentView === 'parent'" class="space-y-6">
+        
+        <!-- Authentication PIN Guard Overlay -->
+        <div x-show="!parentAuthenticated" class="max-w-md mx-auto bg-white rounded-3xl p-6 shadow-xl border-2 border-red-300 flex flex-col items-center">
+          <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center text-red-500 text-3xl mb-4">
+            <i class="fa-solid fa-lock"></i>
+          </div>
+          <h3 class="pokemon-title text-xl text-red-800 mb-2">Professor Control Panel</h3>
+          <p class="text-xs text-gray-500 font-semibold text-center mb-6">Verify access by entering your Professor PIN.</p>
+          
+          <div class="w-full space-y-4">
+            <input type="password" 
+                   x-model="parentPinInput" 
+                   @keydown.enter="verifyParentPin()"
+                   placeholder="Enter PIN" 
+                   class="w-full border-2 border-gray-300 rounded-xl px-4 py-3 text-center text-lg font-bold tracking-widest focus:border-red-400 focus:outline-none" />
+            
+            <p x-show="pinError" class="text-red-500 text-xs font-bold text-center">❌ Invalid PIN! Please try again.</p>
+
+            <button @click="verifyParentPin()" 
+                    class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-6 rounded-xl shadow-md transition-all active:scale-95">
+              Unlock Professor Tools
+            </button>
+            <button @click="currentView = 'trainer'; activeTab = 'tasks'" 
+                    class="w-full bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-2 px-6 rounded-xl text-xs transition-all">
+              Go Back to Trainer Dashboard
+            </button>
+          </div>
+        </div>
+
+        <!-- AUTHENTICATED PARENT CONTROL PANEL -->
+        <div x-show="parentAuthenticated" class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          
+          <!-- Parent Navigation Sidebar -->
+          <div class="bg-white rounded-2xl p-4 shadow-md border-2 border-red-200 space-y-2">
+            <h4 class="font-extrabold text-sm text-red-500 uppercase tracking-widest px-3 mb-4">Professor Options</h4>
+            <button @click="parentActiveTab = 'deliveries'" 
+                    class="w-full py-2.5 px-4 text-left rounded-xl font-bold text-sm transition-all flex items-center gap-2.5"
+                    :class="parentActiveTab === 'deliveries' ? 'bg-red-500 text-white shadow-sm' : 'text-gray-700 hover:bg-red-50'">
+              <i class="fa-solid fa-truck"></i> Fulfill Deliveries
+              <span x-show="getPendingOrdersCount() > 0" class="ml-auto bg-yellow-300 text-red-955 px-2 py-0.5 rounded-full text-xs font-black animate-pulse" x-text="getPendingOrdersCount()"></span>
+            </button>
+            <button @click="parentActiveTab = 'inventory'" 
+                    class="w-full py-2.5 px-4 text-left rounded-xl font-bold text-sm transition-all flex items-center gap-2.5"
+                    :class="parentActiveTab === 'inventory' ? 'bg-red-500 text-white shadow-sm' : 'text-gray-700 hover:bg-red-50'">
+              <i class="fa-solid fa-box-open"></i> Manage Packs
+            </button>
+            <button @click="parentActiveTab = 'tasks'" 
+                    class="w-full py-2.5 px-4 text-left rounded-xl font-bold text-sm transition-all flex items-center gap-2.5"
+                    :class="parentActiveTab === 'tasks' ? 'bg-red-500 text-white shadow-sm' : 'text-gray-700 hover:bg-red-50'">
+              <i class="fa-solid fa-list-check"></i> Manage Summer Tasks
+            </button>
+            <button @click="parentActiveTab = 'settings'" 
+                    class="w-full py-2.5 px-4 text-left rounded-xl font-bold text-sm transition-all flex items-center gap-2.5"
+                    :class="parentActiveTab === 'settings' ? 'bg-red-500 text-white shadow-sm' : 'text-gray-700 hover:bg-red-50'">
+              <i class="fa-solid fa-gears"></i> Wallet & Settings
+            </button>
+            <div class="pt-4 mt-4 border-t border-gray-100">
+              <button @click="lockParentMode()" class="w-full bg-gray-100 hover:bg-red-50 text-red-600 font-bold py-2 rounded-xl text-xs transition-all border border-red-100">
+                <i class="fa-solid fa-power-off mr-1"></i> Lock/Log Out
+              </button>
+            </div>
+          </div>
+
+          <!-- Parent Content Window Area -->
+          <div class="lg:col-span-3">
+            
+            <!-- PANEL A: FULFILL REDEEMS -->
+            <div x-show="parentActiveTab === 'deliveries'" class="bg-white rounded-3xl p-6 shadow-lg border-2 border-red-200">
+              <div class="border-b border-gray-100 pb-3 mb-4 flex justify-between items-center">
+                <div>
+                  <h3 class="pokemon-title text-lg text-red-800">Fulfill Claims</h3>
+                  <p class="text-xs text-gray-500 font-semibold">Hand over physical cards and click Deliver below to complete the transactions!</p>
+                </div>
+                <span class="text-xs font-bold text-red-500 bg-red-50 px-2.5 py-1 rounded-full border border-red-200" x-text="`Pending: ${getPendingOrdersCount()}`"></span>
+              </div>
+
+              <template x-if="getPendingOrdersCount() === 0">
+                <div class="text-center py-12 text-gray-400">
+                  <i class="fa-solid fa-circle-check text-5xl mb-3 block text-green-400"></i>
+                  <p class="font-semibold text-sm">All booster packs have been physically delivered! Awesome job!</p>
+                </div>
+              </template>
+              <template x-if="getPendingOrdersCount() > 0">
+                <div class="space-y-4">
+                  <template x-for="order in orders.filter(o => o.status === 'pending')" :key="order.id">
+                    <div class="border-2 border-amber-300 bg-amber-50 bg-opacity-30 rounded-2xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                      <div>
+                        <span class="text-xs uppercase font-black text-amber-700 tracking-wider">Redeem Request Ticket</span>
+                        <h4 class="font-bold text-gray-800 text-base" x-text="order.itemName"></h4>
+                        <div class="text-xs font-bold text-gray-500 mt-1">
+                          <span>Cost: <span x-text="order.cost"></span> Coins</span> • 
+                          <span x-text="formatDate(order.timestamp)"></span>
+                        </div>
+                      </div>
+                      <div class="flex items-center gap-2 self-stretch md:self-auto shrink-0">
+                        <button @click="cancelAndRefundOrder(order)" 
+                                class="flex-1 md:flex-none bg-white hover:bg-red-50 text-red-600 border border-red-200 font-extrabold text-xs py-2 px-3 rounded-lg transition-all">
+                          Cancel & Refund
+                        </button>
+                        <button @click="deliverOrder(order)" 
+                                class="flex-1 md:flex-none bg-green-500 hover:bg-green-600 text-white font-extrabold text-xs py-2 px-4 rounded-lg shadow transition-all flex items-center justify-center gap-1.5">
+                          <i class="fa-solid fa-hand-holding-box"></i> Hand Over! 🎉
+                        </button>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </template>
+            </div>
+
+            <!-- PANEL B: MANAGE BOOSTER STORES -->
+            <div x-show="parentActiveTab === 'inventory'" class="bg-white rounded-3xl p-6 shadow-lg border-2 border-red-200 space-y-6">
+              <div class="flex justify-between items-center border-b border-gray-100 pb-3">
+                <div>
+                  <h3 class="pokemon-title text-lg text-red-800">Booster Stock Manager</h3>
+                  <p class="text-xs text-gray-500 font-semibold">Maintain, edit, or restock Pokémon Booster Packs in your supply.</p>
+                </div>
+                <button @click="openAddPackModal()" class="bg-red-500 hover:bg-red-600 text-white font-extrabold text-xs py-2.5 px-4 rounded-xl shadow-md transition-all flex items-center gap-1">
+                  <i class="fa-solid fa-plus"></i> Add New Pack
+                </button>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <template x-for="pack in inventory" :key="pack.id">
+                  <div class="border-2 rounded-2xl p-4 flex items-center justify-between gap-4 bg-white hover:border-red-200">
+                    <div>
+                      <div class="flex items-center gap-2">
+                        <span class="w-3.5 h-3.5 rounded-full inline-block border"
+                              :class="{
+                                'bg-red-500 border-red-600': pack.theme === 'red',
+                                'bg-blue-500 border-blue-600': pack.theme === 'blue',
+                                'bg-purple-500 border-purple-600': pack.theme === 'purple',
+                                'bg-green-500 border-green-600': pack.theme === 'green',
+                                'bg-yellow-400 border-yellow-500': pack.theme === 'yellow',
+                                'bg-teal-500 border-teal-600': pack.theme === 'teal'
+                              }"></span>
+                        <h4 class="font-extrabold text-gray-800 text-sm md:text-base" x-text="pack.name"></h4>
+                      </div>
+                      <div class="text-xs text-gray-500 font-bold mt-1">
+                        Price: <span class="text-emerald-700" x-text="pack.cost"></span> Coins • 
+                        Stock count: <span :class="pack.stock > 0 ? 'text-green-600' : 'text-red-500 font-black'" x-text="pack.stock"></span> packs
+                      </div>
+                    </div>
+                    
+                    <div class="flex items-center gap-2 shrink-0">
+                      <button @click="adjustStock(pack, -1)" class="w-8 h-8 rounded-lg bg-gray-100 hover:bg-red-50 text-red-600 font-black flex items-center justify-center border transition-all active:scale-90">-</button>
+                      <button @click="adjustStock(pack, 1)" class="w-8 h-8 rounded-lg bg-gray-100 hover:bg-green-50 text-green-600 font-black flex items-center justify-center border transition-all active:scale-90">+</button>
+                      <button @click="deletePack(pack)" class="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-500 flex items-center justify-center transition-all" title="Delete Form">
+                        <i class="fa-solid fa-trash-can text-xs"></i>
+                      </button>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- PANEL C: MANAGE TASKS ACTIVITIES -->
+            <div x-show="parentActiveTab === 'tasks'" class="bg-white rounded-3xl p-6 shadow-lg border-2 border-red-200 space-y-6">
+              <div class="flex justify-between items-center border-b border-gray-100 pb-3">
+                <div>
+                  <h3 class="pokemon-title text-lg text-red-800">Summer Tasks Architect</h3>
+                  <p class="text-xs text-gray-500 font-semibold">Assign, remove, or modify custom activities and coin/XP payouts.</p>
+                </div>
+                <button @click="openAddTaskModal()" class="bg-red-500 hover:bg-red-600 text-white font-extrabold text-xs py-2.5 px-4 rounded-xl shadow-md transition-all flex items-center gap-1">
+                  <i class="fa-solid fa-plus"></i> Create Custom Task
+                </button>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <template x-for="task in tasks" :key="task.id">
+                  <div class="border-2 rounded-2xl p-4 flex items-center justify-between gap-4 bg-white hover:border-red-200">
+                    <div class="flex items-center gap-3">
+                      <span class="text-3xl" x-text="task.icon || '📝'"></span>
+                      <div>
+                        <h4 class="font-extrabold text-gray-800 text-sm" x-text="task.name"></h4>
+                        <div class="text-[10px] text-gray-500 font-bold uppercase tracking-wider mt-0.5">
+                          <span x-text="task.frequency"></span> • 
+                          <span class="text-amber-600">+<span x-text="task.rewardPoints"></span> Coins</span> • 
+                          <span class="text-green-600">+<span x-text="task.rewardXp"></span> EXP</span>
+                        </div>
+                      </div>
+                    </div>
+                    <button @click="deleteTask(task)" class="w-8 h-8 rounded-lg bg-gray-100 hover:bg-red-100 text-red-600 flex items-center justify-center transition-all border shrink-0">
+                      <i class="fa-solid fa-trash-can text-xs"></i>
+                    </button>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- PANEL D: POCKET ADJUSTS & SETTINGS -->
+            <div x-show="parentActiveTab === 'settings'" class="bg-white rounded-3xl p-6 shadow-lg border-2 border-red-200 space-y-6">
+              <div class="border-b border-gray-100 pb-3">
+                <h3 class="pokemon-title text-lg text-red-800">Wallet Controls & Master Config</h3>
+                <p class="text-xs text-gray-500 font-semibold">Quick adjustments to balance, XP levels, and application configurations.</p>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                <div class="bg-amber-50 p-5 rounded-2xl border border-amber-200 space-y-3">
+                  <h4 class="font-extrabold text-sm text-amber-800 flex items-center gap-1.5">
+                    <i class="fa-solid fa-gift"></i> Send Pocket Money / Gift Coins
+                  </h4>
+                  <p class="text-xs text-gray-500 font-medium">Instantly add extra coins to your son's balance for exceptional chores or milestones!</p>
+                  <div class="flex gap-2">
+                    <input type="number" id="giftCoinsInput" placeholder="+50" class="w-24 border-2 border-amber-300 rounded-lg px-3 py-1.5 font-bold text-center" />
+                    <button @click="awardCoins()" class="flex-1 bg-amber-500 hover:bg-amber-600 text-amber-950 font-black text-xs py-2 px-4 rounded-lg shadow-sm transition-all">
+                      Grant Bonus Coins! 🎁
+                    </button>
+                  </div>
+                </div>
+
+                <div class="bg-red-50 p-5 rounded-2xl border border-red-200 space-y-3">
+                  <h4 class="font-extrabold text-sm text-red-800 flex items-center gap-1.5">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i> Wurmple Evolution Override
+                  </h4>
+                  <p class="text-xs text-gray-500 font-medium">Manually toggle or select which evolutionary Pokémon form is active.</p>
+                  <select @change="overrideForm($event.target.value)" class="w-full border-2 border-red-300 bg-white rounded-lg px-3 py-2 text-xs font-bold text-gray-700">
+                    <option value="wurmple" :selected="profile.currentForm === 'wurmple'">🐛 Level 1: Wurmple</option>
+                    <option value="silcoon" :selected="profile.currentForm === 'silcoon'">🥚 Level 5 Option: Silcoon</option>
+                    <option value="cascoon" :selected="profile.currentForm === 'cascoon'">🟣 Level 5 Option: Cascoon</option>
+                    <option value="beautifly" :selected="profile.currentForm === 'beautifly'">🦋 Level 10 Option: Beautifly</option>
+                    <option value="dustox" :selected="profile.currentForm === 'dustox'">🐝 Level 10 Option: Dustox</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="border-t border-gray-100 pt-6 space-y-4">
+                <h4 class="font-bold text-sm text-gray-800">Security & Maintenance Actions</h4>
+                
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border p-4 rounded-2xl">
+                  <div>
+                    <span class="block font-bold text-sm text-gray-800">Change Parent Password PIN</span>
+                    <span class="text-xs text-gray-500 font-medium">Update the protection pass required to access these professor tools.</span>
+                  </div>
+                  <div class="flex gap-2 w-full sm:w-auto">
+                    <input type="text" id="newPinInput" placeholder="New PIN" class="border border-gray-300 rounded-lg px-3 py-1 text-xs font-bold w-24" />
+                    <button @click="updatePin()" class="bg-gray-800 text-white text-xs font-bold py-1.5 px-3 rounded-lg hover:bg-black transition-all">Save</button>
+                  </div>
+                </div>
+
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border p-4 rounded-2xl bg-orange-50 border-orange-200">
+                  <div>
+                    <span class="block font-bold text-sm text-orange-800">Force Tasks Reset</span>
+                    <span class="text-xs text-gray-500 font-medium">Manually uncheck all checked daily/weekly accomplishments right now.</span>
+                  </div>
+                  <button @click="forceTasksReset()" class="bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold py-2 px-4 rounded-lg shadow-sm transition-all">
+                    Reset Checklist
+                  </button>
+                </div>
+
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border border-red-200 p-4 rounded-2xl bg-red-50">
+                  <div>
+                    <span class="block font-bold text-sm text-red-800">Database Factory Reset</span>
+                    <span class="text-xs text-gray-500 font-medium">Wipe out all redemptions, restore default booster packs, and zero current levels.</span>
+                  </div>
+                  <button @click="factoryReset()" class="bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-2 px-4 rounded-lg shadow-sm transition-all">
+                    Wipe & Reload Defaults
+                  </button>
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
+    <!-- EVOLUTION CEREMONY MODAL OVERLAY -->
+    <div x-show="showEvolutions" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black bg-opacity-95 text-white p-6" x-transition>
+      <div class="absolute inset-0 bg-radar opacity-30 pointer-events-none"></div>
+      
+      <div class="text-center space-y-8 max-w-lg z-10">
+        <h2 class="pokemon-title text-2xl md:text-3xl text-yellow-300 animate-pulse flex items-center justify-center gap-3">
+          <i class="fa-solid fa-sparkles text-amber-400"></i> WHAT IS HAPPENING?! <i class="fa-solid fa-sparkles text-amber-400"></i>
+        </h2>
+        
+        <p class="font-semibold text-lg text-gray-300">Your <span class="capitalize text-yellow-400" x-text="profile.currentForm"></span> is glowing with evolutionary energy!</p>
+
+        <div class="w-64 h-64 mx-auto flex items-center justify-center relative bg-white bg-opacity-10 rounded-full border border-white border-opacity-20 shadow-2xl overflow-hidden">
+          <div class="absolute inset-0 bg-yellow-400 rounded-full blur-3xl opacity-20" :class="evolving ? 'animate-ping' : ''" style="animation-duration: 0.8s;"></div>
+          
+          <div class="relative z-10" :class="evolving ? 'evolve-anim' : ''">
+            <template x-if="evolving">
+              <div class="flex items-center justify-center">
+                <span class="text-8xl select-none">✨</span>
+              </div>
+            </template>
+            <template x-if="!evolving">
+              <div class="flex flex-col items-center justify-center scale-110">
+                <template x-if="!imageErrors[evolutionTarget]">
+                  <img :src="pokemonImages[evolutionTarget]" 
+                       @error="imageErrors[evolutionTarget] = true" 
+                       class="w-44 h-44 object-contain filter drop-shadow-[0_10px_15px_rgba(251,191,36,0.6)] animate-bounce" 
+                       alt="Evolving Pokemon">
+                </template>
+                <template x-if="imageErrors[evolutionTarget]">
+                  <div class="flex flex-col items-center justify-center scale-110">
+                    <template x-if="evolutionTarget === 'silcoon'"><span class="text-[120px] filter drop-shadow-xl animate-bounce">🥚</span></template>
+                    <template x-if="evolutionTarget === 'cascoon'"><span class="text-[120px] filter drop-shadow-xl animate-bounce">🟣</span></template>
+                    <template x-if="evolutionTarget === 'beautifly'"><span class="text-[120px] filter drop-shadow-xl animate-bounce">🦋</span></template>
+                    <template x-if="evolutionTarget === 'dustox'"><span class="text-[120px] filter drop-shadow-xl animate-bounce">🐝</span></template>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <div class="space-y-4">
+          <template x-if="evolving">
+            <div class="font-mono text-xs text-yellow-500 animate-pulse uppercase tracking-widest">
+              Syncing Cellular Matrix Energy...
+            </div>
+          </template>
+          <template x-if="!evolving">
+            <div class="space-y-4">
+              <div class="text-xl font-bold bg-gradient-to-r from-yellow-300 to-amber-400 text-transparent bg-clip-text">
+                CONGRATULATIONS! 🎉
+              </div>
+              <p class="text-lg">Your Wurmple evolved into <span class="uppercase font-black text-yellow-400" x-text="evolutionTarget"></span>!</p>
+              <button @click="closeEvolutionCeremony()" class="bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-extrabold px-8 py-3 rounded-2xl shadow-lg transition-transform active:scale-95 text-sm uppercase tracking-wide">
+                Awesome! Let's Go! 🎒
+              </button>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL: ADD CUSTOM TASK -->
+    <div x-show="showNewTaskModal" class="fixed inset-0 z-40 flex items-center justify-center bg-black bg-opacity-50 p-4" x-transition>
+      <div class="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border-2 border-red-300">
+        <h3 class="pokemon-title text-lg text-red-800 mb-4">Create Summer Activity</h3>
+        
+        <div class="space-y-4">
+          <div>
+            <label class="block text-xs font-bold text-gray-500 mb-1">TASK NAME</label>
+            <input type="text" x-model="newTask.name" placeholder="e.g. Read violin music book" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 font-semibold text-sm focus:border-red-400 focus:outline-none" />
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-bold text-gray-500 mb-1">COINS PAYOUT</label>
+              <input type="number" x-model.number="newTask.rewardPoints" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 font-semibold text-sm focus:border-red-400 focus:outline-none" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-gray-500 mb-1">XP PAYOUT</label>
+              <input type="number" x-model.number="newTask.rewardXp" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 font-semibold text-sm focus:border-red-400 focus:outline-none" />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-bold text-gray-500 mb-1">FREQUENCY</label>
+              <select x-model="newTask.frequency" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 font-semibold text-sm focus:border-red-400 focus:outline-none">
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-gray-500 mb-1">EMOJI ICON</label>
+              <select x-model="newTask.icon" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 font-semibold text-sm focus:border-red-400 focus:outline-none">
+                <option value="🎻">🎻 Violin</option>
+                <option value="📚">📚 Book</option>
+                <option value="🔢">🔢 Math</option>
+                <option value="🧹">🧹 Cleaning</option>
+                <option value="⚽">⚽ Sports</option>
+                <option value="🎨">🎨 Art</option>
+                <option value="🥦">🥦 Eat Veggies</option>
+                <option value="🛏️">🛏️ Bedtime</option>
+                <option value="📝">📝 Note</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="flex gap-2 pt-4 border-t border-gray-100">
+            <button @click="showNewTaskModal = false" class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-2.5 rounded-xl text-xs transition-all">Cancel</button>
+            <button @click="saveCustomTask()" class="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-2.5 rounded-xl text-xs shadow-sm transition-all">Save Activity</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL: ADD/EDIT BOOSTER PACK -->
+    <div x-show="showNewPackModal" class="fixed inset-0 z-40 flex items-center justify-center bg-black bg-opacity-50 p-4" x-transition>
+      <div class="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border-2 border-red-300">
+        <h3 class="pokemon-title text-lg text-red-800 mb-4">Stock Booster Pack</h3>
+        
+        <div class="space-y-4">
+          <div>
+            <label class="block text-xs font-bold text-gray-500 mb-1">BOOSTER PACK NAME</label>
+            <input type="text" x-model="newPack.name" placeholder="e.g. Scarlet & Violet: Paldean Fates" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 font-semibold text-sm focus:border-red-400 focus:outline-none" />
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-bold text-gray-500 mb-1">COIN VALUE COST</label>
+              <input type="number" x-model.number="newPack.cost" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 font-semibold text-sm focus:border-red-400 focus:outline-none" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-gray-500 mb-1">STOCK QUANTITY</label>
+              <input type="number" x-model.number="newPack.stock" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 font-semibold text-sm focus:border-red-400 focus:outline-none" />
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-gray-500 mb-1">COLOR THEME</label>
+            <select x-model="newPack.theme" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 font-semibold text-sm focus:border-red-400 focus:outline-none">
+              <option value="purple">Purple (Fates, Violet)</option>
+              <option value="red">Red (Scarlet, Flames)</option>
+              <option value="blue">Blue (Water, Tempest)</option>
+              <option value="green">Green (Grass, Twilight)</option>
+              <option value="yellow">Yellow (Lightning, Crown Zenith)</option>
+              <option value="teal">Teal (Mask, Temporal)</option>
+            </select>
+          </div>
+
+          <div class="flex gap-2 pt-4 border-t border-gray-100">
+            <button @click="showNewPackModal = false" class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-2.5 rounded-xl text-xs transition-all">Cancel</button>
+            <button @click="saveBoosterPack()" class="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-2.5 rounded-xl text-xs shadow-sm transition-all">Add to Store</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CUSTOM TOAST DIALOG OVERLAY -->
+    <div x-show="showAlert" 
+         class="fixed bottom-6 right-6 z-50 max-w-sm w-full bg-white rounded-2xl shadow-2xl p-4 border-3 flex items-start gap-3 transform hover:scale-102 transition-transform"
+         :class="{
+           'border-green-400': alertType === 'success',
+           'border-red-400': alertType === 'error',
+           'border-amber-400': alertType === 'info'
+         }" x-transition>
+      <div class="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+           :class="{
+             'bg-green-100 text-green-600': alertType === 'success',
+             'bg-red-100 text-red-600': alertType === 'error',
+             'bg-amber-100 text-amber-600': alertType === 'info'
+           }">
+        <template x-if="alertType === 'success'"><i class="fa-solid fa-circle-check text-lg"></i></template>
+        <template x-if="alertType === 'error'"><i class="fa-solid fa-triangle-exclamation text-lg"></i></template>
+        <template x-if="alertType === 'info'"><i class="fa-solid fa-bell text-lg"></i></template>
+      </div>
+      <div class="flex-1">
+        <h4 class="font-extrabold text-sm text-gray-800" x-text="alertTitle"></h4>
+        <p class="text-xs text-gray-500 mt-0.5 leading-relaxed" x-text="alertMessage"></p>
+      </div>
+      <button @click="showAlert = false" class="text-gray-400 hover:text-gray-600">
+        <i class="fa-solid fa-times"></i>
+      </button>
+    </div>
+
+  </div>
+
+  <!-- FIREBASE CONFIG COMPLIANT HANDLERS -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, addDoc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    window.fbApp = initializeApp;
+    window.fbAuth = getAuth;
+    window.fbSignInWithCustomToken = signInWithCustomToken;
+    window.fbSignInAnonymously = signInAnonymously;
+    window.fbOnAuthStateChanged = onAuthStateChanged;
+    window.fbGetFirestore = getFirestore;
+    window.fbDoc = doc;
+    window.fbSetDoc = setDoc;
+    window.fbGetDoc = getDoc;
+    window.fbCollection = collection;
+    window.fbOnSnapshot = onSnapshot;
+    window.fbAddDoc = addDoc;
+    window.fbUpdateDoc = updateDoc;
+    window.fbDeleteDoc = deleteDoc;
+
+    window.dispatchEvent(new CustomEvent('firebase-ready'));
+  </script>
+</body>
+</html>
