@@ -209,7 +209,9 @@
           parentPin: 'wurmple',
           totalEarned: 0,
           dailyLimit: 0,
-          weeklyLimit: 0
+          weeklyLimit: 0,
+          dailyCompletionLimit: 0, // 0 = unlimited
+          weeklyCompletionLimit: 0 // 0 = unlimited
         },
 
         // Primary collections
@@ -503,7 +505,9 @@
             parentPin: 'wurmple',
             totalEarned: 50,
             dailyLimit: 0,
-            weeklyLimit: 0
+            weeklyLimit: 0,
+            dailyCompletionLimit: 0,
+            weeklyCompletionLimit: 0
           };
           this.tasks = [
             { id: '1', name: 'Violin Practice 🎻', rewardPoints: 15, rewardXp: 20, frequency: 'daily', maxLimit: 0 },
@@ -616,6 +620,23 @@
           return task.maxLimit > 0 && (this.getTaskCompletedCount(task) + this.getTaskPendingCount(task)) >= task.maxLimit;
         },
 
+        // RE-CLAIM OR SUBMIT CAPS (DAILY/WEEKLY LIMITS TO COMPLETIONS)
+        getCompletionCount(freq) {
+          const mark = freq === 'daily' ? this.getTodayString() : this.getCurrentWeekString();
+          // Count approved AND pending claims for this period
+          return this.claims.filter(c => c.frequency === freq && c.dateOrWeek === mark).length;
+        },
+
+        isCompletionLimitReached(freq) {
+          const limit = freq === 'daily' ? (this.profile.dailyCompletionLimit || 0) : (this.profile.weeklyCompletionLimit || 0);
+          if (limit <= 0) return false;
+          return this.getCompletionCount(freq) >= limit;
+        },
+
+        isTaskCardLocked(task) {
+          return this.isTaskFullyCompletedLimit(task) || (this.isCompletionLimitReached(task.frequency) && !this.getTaskClaimToday(task));
+        },
+
         // SEEDED RANDOM SHUFFLE FOR STABLE ROTATION
         seededRandom(seedString) {
           let hash = 0;
@@ -686,6 +707,18 @@
             // Check summer-long cap limits before dispatching the claim submission
             if (this.isTaskAtLimitLimit(task)) {
               this.triggerAlert("Limit Reached! 🏆", `You've already completed "${task.name}" the maximum of ${task.maxLimit} times this summer! Great job!`, "info");
+              return;
+            }
+
+            // Check parent daily/weekly completions cap limit
+            if (this.isCompletionLimitReached(task.frequency)) {
+              const capLimit = task.frequency === 'daily' ? this.profile.dailyCompletionLimit : this.profile.weeklyCompletionLimit;
+              const periodLabel = task.frequency === 'daily' ? 'today' : 'this week';
+              this.triggerAlert(
+                "Cap Limit Reached! 🛑", 
+                `Your parent set a completion limit of ${capLimit} ${task.frequency} tasks ${periodLabel}. Great job working hard!`, 
+                "info"
+              );
               return;
             }
 
@@ -1200,7 +1233,9 @@
                 parentPin: 'wurmple',
                 totalEarned: 0,
                 dailyLimit: 0,
-                weeklyLimit: 0
+                weeklyLimit: 0,
+                dailyCompletionLimit: 0,
+                weeklyCompletionLimit: 0
               };
 
               if (this.dbMode === 'firebase') {
@@ -1529,8 +1564,13 @@
             <!-- Daily activities -->
             <div class="bg-white rounded-3xl p-6 shadow-lg border-2 border-emerald-300">
               <div class="flex justify-between items-center border-b border-gray-100 pb-3 mb-4">
-                <h3 class="pokemon-title text-lg text-emerald-800 flex items-center gap-2">
-                  <i class="fa-solid fa-sun text-amber-500 animate-spin" style="animation-duration: 10s;"></i> Daily Activities
+                <h3 class="pokemon-title text-lg text-emerald-800 flex flex-wrap items-center gap-2">
+                  <i class="fa-solid fa-sun text-amber-500 animate-spin" style="animation-duration: 10s;"></i> 
+                  <span>Daily Activities</span>
+                  <!-- Today's Completion Cap Counter -->
+                  <template x-if="profile.dailyCompletionLimit > 0">
+                    <span class="text-xs text-amber-800 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full font-extrabold" x-text="`Completions today: ${getCompletionCount('daily')}/${profile.dailyCompletionLimit}`"></span>
+                  </template>
                 </h3>
                 <span class="text-xs bg-emerald-100 text-emerald-800 font-bold px-2 py-1 rounded-full">Professor Approves Claims</span>
               </div>
@@ -1541,8 +1581,8 @@
                        :class="{
                          'bg-emerald-50 bg-opacity-70 border-emerald-400': isTaskCompletedToday(task),
                          'bg-amber-50 bg-opacity-70 border-amber-400 animate-pulse': isTaskPendingToday(task),
-                         'bg-gray-100 border-gray-300 opacity-75 cursor-not-allowed': isTaskFullyCompletedLimit(task) && !isTaskCompletedToday(task) && !isTaskPendingToday(task),
-                         'border-gray-200 hover:border-emerald-300 hover:shadow-sm': !isTaskCompletedToday(task) && !isTaskPendingToday(task) && !isTaskFullyCompletedLimit(task)
+                         'bg-gray-100 border-gray-300 opacity-75 cursor-not-allowed': isTaskCardLocked(task) && !isTaskCompletedToday(task) && !isTaskPendingToday(task),
+                         'border-gray-200 hover:border-emerald-300 hover:shadow-sm': !isTaskCompletedToday(task) && !isTaskPendingToday(task) && !isTaskCardLocked(task)
                        }">
                     <div class="flex items-center gap-3">
                       <span class="text-3xl" x-text="task.icon || '📝'"></span>
@@ -1575,12 +1615,12 @@
                               :class="{
                                 'bg-emerald-500 border-emerald-600 text-white': isTaskCompletedToday(task),
                                 'bg-amber-400 border-amber-500 text-amber-950': isTaskPendingToday(task),
-                                'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed': isTaskFullyCompletedLimit(task) && !isTaskCompletedToday(task) && !isTaskPendingToday(task),
-                                'border-gray-300 hover:border-emerald-400 hover:bg-emerald-50 bg-white': !isTaskCompletedToday(task) && !isTaskPendingToday(task) && !isTaskFullyCompletedLimit(task)
+                                'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed': isTaskCardLocked(task) && !isTaskCompletedToday(task) && !isTaskPendingToday(task),
+                                'border-gray-300 hover:border-emerald-400 hover:bg-emerald-50 bg-white': !isTaskCompletedToday(task) && !isTaskPendingToday(task) && !isTaskCardLocked(task)
                               }">
                         <i class="fa-solid fa-check text-lg" x-show="isTaskCompletedToday(task)"></i>
                         <i class="fa-solid fa-hourglass text-sm" x-show="isTaskPendingToday(task)"></i>
-                        <i class="fa-solid fa-lock text-xs" x-show="isTaskFullyCompletedLimit(task) && !isTaskCompletedToday(task) && !isTaskPendingToday(task)"></i>
+                        <i class="fa-solid fa-lock text-xs" x-show="isTaskCardLocked(task) && !isTaskCompletedToday(task) && !isTaskPendingToday(task)"></i>
                       </button>
                     </div>
                   </div>
@@ -1591,8 +1631,13 @@
             <!-- Weekly challenges -->
             <div class="bg-white rounded-3xl p-6 shadow-lg border-2 border-emerald-300">
               <div class="flex justify-between items-center border-b border-gray-100 pb-3 mb-4">
-                <h3 class="pokemon-title text-lg text-emerald-800 flex items-center gap-2">
-                  <i class="fa-solid fa-calendar-days text-emerald-600"></i> Weekly Challenges
+                <h3 class="pokemon-title text-lg text-emerald-800 flex flex-wrap items-center gap-2">
+                  <i class="fa-solid fa-calendar-days text-emerald-600"></i> 
+                  <span>Weekly Challenges</span>
+                  <!-- This Week's Completion Cap Counter -->
+                  <template x-if="profile.weeklyCompletionLimit > 0">
+                    <span class="text-xs text-indigo-800 bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded-full font-extrabold" x-text="`Completions this week: ${getCompletionCount('weekly')}/${profile.weeklyCompletionLimit}`"></span>
+                  </template>
                 </h3>
                 <span class="text-xs bg-emerald-100 text-emerald-800 font-bold px-2 py-1 rounded-full">Resets Every Sunday</span>
               </div>
@@ -1603,8 +1648,8 @@
                        :class="{
                          'bg-emerald-50 bg-opacity-70 border-emerald-400': isTaskCompletedThisWeek(task),
                          'bg-amber-50 bg-opacity-70 border-amber-400 animate-pulse': isTaskPendingThisWeek(task),
-                         'bg-gray-100 border-gray-300 opacity-75 cursor-not-allowed': isTaskFullyCompletedLimit(task) && !isTaskCompletedThisWeek(task) && !isTaskPendingThisWeek(task),
-                         'border-gray-200 hover:border-emerald-300 hover:shadow-sm': !isTaskCompletedThisWeek(task) && !isTaskPendingThisWeek(task) && !isTaskFullyCompletedLimit(task)
+                         'bg-gray-100 border-gray-300 opacity-75 cursor-not-allowed': isTaskCardLocked(task) && !isTaskCompletedThisWeek(task) && !isTaskPendingThisWeek(task),
+                         'border-gray-200 hover:border-emerald-300 hover:shadow-sm': !isTaskCompletedThisWeek(task) && !isTaskPendingThisWeek(task) && !isTaskCardLocked(task)
                        }">
                     <div class="flex items-center gap-3">
                       <span class="text-3xl" x-text="task.icon || '📖'"></span>
@@ -1637,12 +1682,12 @@
                               :class="{
                                 'bg-emerald-500 border-emerald-600 text-white': isTaskCompletedThisWeek(task),
                                 'bg-amber-400 border-amber-500 text-amber-950': isTaskPendingThisWeek(task),
-                                'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed': isTaskFullyCompletedLimit(task) && !isTaskCompletedThisWeek(task) && !isTaskPendingThisWeek(task),
-                                'border-gray-300 hover:border-emerald-400 hover:bg-emerald-50 bg-white': !isTaskCompletedThisWeek(task) && !isTaskPendingThisWeek(task) && !isTaskFullyCompletedLimit(task)
+                                'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed': isTaskCardLocked(task) && !isTaskCompletedThisWeek(task) && !isTaskPendingThisWeek(task),
+                                'border-gray-300 hover:border-emerald-400 hover:bg-emerald-50 bg-white': !isTaskCompletedThisWeek(task) && !isTaskPendingThisWeek(task) && !isTaskCardLocked(task)
                               }">
                         <i class="fa-solid fa-check text-lg" x-show="isTaskCompletedThisWeek(task)"></i>
                         <i class="fa-solid fa-hourglass text-sm" x-show="isTaskPendingThisWeek(task)"></i>
-                        <i class="fa-solid fa-lock text-xs" x-show="isTaskFullyCompletedLimit(task) && !isTaskCompletedThisWeek(task) && !isTaskPendingThisWeek(task)"></i>
+                        <i class="fa-solid fa-lock text-xs" x-show="isTaskCardLocked(task) && !isTaskCompletedThisWeek(task) && !isTaskPendingThisWeek(task)"></i>
                       </button>
                     </div>
                   </div>
@@ -2186,6 +2231,36 @@ service cloud.firestore {
                       <option value="0">Show All (Default)</option>
                       <template x-for="n in getRange(tasks.filter(t => t.frequency === 'weekly').length)" :key="n">
                         <option :value="n" x-text="`Limit to ${n} task${n > 1 ? 's' : ''}`" :selected="profile.weeklyLimit === n"></option>
+                      </template>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <!-- NEW: Task Completion Caps Card -->
+              <div class="bg-indigo-50 p-5 rounded-2xl border border-indigo-200 space-y-3">
+                <h4 class="font-extrabold text-sm text-indigo-800 flex items-center gap-1.5">
+                  <i class="fa-solid fa-circle-minus animate-pulse"></i> Task Completion Caps
+                </h4>
+                <p class="text-xs text-gray-500 font-medium">
+                  Limit how many daily/weekly tasks your son can complete/submit each day or week. He can still see all tasks, but won't be allowed to check off more than this cap!
+                </p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                  <div>
+                    <label class="block text-xs font-bold text-gray-600 mb-1">Max Daily Completions / Day</label>
+                    <select x-model.number="profile.dailyCompletionLimit" @change="syncProfile()" class="w-full border-2 border-indigo-300 bg-white rounded-lg px-3 py-2 text-xs font-bold text-gray-700">
+                      <option value="0">No Limit (Unlimited)</option>
+                      <template x-for="n in getRange(10)" :key="n">
+                        <option :value="n" x-text="`Max ${n} completion${n > 1 ? 's' : ''} / day`" :selected="profile.dailyCompletionLimit === n"></option>
+                      </template>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-gray-600 mb-1">Max Weekly Completions / Week</label>
+                    <select x-model.number="profile.weeklyCompletionLimit" @change="syncProfile()" class="w-full border-2 border-indigo-300 bg-white rounded-lg px-3 py-2 text-xs font-bold text-gray-700">
+                      <option value="0">No Limit (Unlimited)</option>
+                      <template x-for="n in getRange(10)" :key="n">
+                        <option :value="n" x-text="`Max ${n} completion${n > 1 ? 's' : ''} / week`" :selected="profile.weeklyCompletionLimit === n"></option>
                       </template>
                     </select>
                   </div>
