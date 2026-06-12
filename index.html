@@ -64,10 +64,6 @@
     This guarantees that Alpine can evaluate x-data="summerApp()" immediately on load without race conditions.
   -->
   <script>
-    // ==========================================
-    // PARENT NOTE: FIXED VARIABLE DECLARATIONS
-    // Both MY_FIREBASE_CONFIG and firebaseConfig are now mapped together!
-    // ==========================================
     const MY_FIREBASE_CONFIG = {
       apiKey: "AIzaSyC7VinwSJheIF0aX1UsuCBOuE-OlgxWkWM",
       authDomain: "wurmples-adventure.firebaseapp.com",
@@ -77,7 +73,6 @@
       appId: "1:447850856669:web:474a9e94328792d722db34"
     };
 
-    // Alias to prevent any scope or key verification errors
     const firebaseConfig = MY_FIREBASE_CONFIG;
 
     // SOUND EFFECTS RETRO SYNTHESIS ENGINE
@@ -188,7 +183,7 @@
         activeTab: 'tasks',
         parentActiveTab: 'deliveries',
 
-        // Corrected Official Pokemon Sprites Artwork Assets (National Pokédex ID Compliant)
+        // Corrected Official Pokemon Sprites Artwork Assets
         pokemonImages: {
           wurmple: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/265.png',
           silcoon: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/266.png',
@@ -197,7 +192,6 @@
           dustox: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/269.png'
         },
 
-        // Realtime loader check to fallback on gorgeous custom vector drawings if network/links ever fail
         imageErrors: {
           wurmple: false,
           silcoon: false,
@@ -206,7 +200,7 @@
           dustox: false
         },
 
-        // Configuration Profile State (Unified profile state document)
+        // Configuration Profile State
         profile: {
           points: 0,
           xp: 0,
@@ -220,6 +214,7 @@
         tasks: [],
         inventory: [],
         orders: [],
+        claims: [], // Unified claims collection for approvals & history
 
         // Modals
         showEvolutions: false,
@@ -236,7 +231,6 @@
           onConfirm: null
         },
 
-        // New item builder templates
         newTask: { name: '', rewardPoints: 10, rewardXp: 15, frequency: 'daily', icon: '📝' },
         newPack: { name: '', cost: 100, stock: 3, theme: 'purple' },
 
@@ -257,7 +251,6 @@
             });
             setTimeout(() => {
               if (this.loading) {
-                // Check if user set up their custom config file safely
                 if (typeof MY_FIREBASE_CONFIG !== 'undefined' && MY_FIREBASE_CONFIG && MY_FIREBASE_CONFIG.apiKey !== "YOUR_API_KEY") {
                   this.connectFirebase();
                 } else {
@@ -277,6 +270,7 @@
             localStorage.setItem('wurmple_tasks', JSON.stringify(this.tasks));
             localStorage.setItem('wurmple_inventory', JSON.stringify(this.inventory));
             localStorage.setItem('wurmple_orders', JSON.stringify(this.orders));
+            localStorage.setItem('wurmple_claims', JSON.stringify(this.claims));
           }
         },
 
@@ -285,11 +279,13 @@
           const tasks = localStorage.getItem('wurmple_tasks');
           const inventory = localStorage.getItem('wurmple_inventory');
           const orders = localStorage.getItem('wurmple_orders');
+          const claims = localStorage.getItem('wurmple_claims');
 
           if (profile) this.profile = JSON.parse(profile);
           if (tasks) this.tasks = JSON.parse(tasks);
           if (inventory) this.inventory = JSON.parse(inventory);
           if (orders) this.orders = JSON.parse(orders);
+          if (claims) this.claims = JSON.parse(claims);
         },
 
         // FIREBASE SYNCER & LISTENER INITIALIZATION
@@ -297,16 +293,13 @@
           try {
             let config = null;
 
-            // 1. Check if hosted environment injected a config
             if (typeof __firebase_config !== 'undefined' && __firebase_config) {
               config = JSON.parse(__firebase_config);
             } 
-            // 2. Otherwise use parent hardcoded configuration safely
             else if (typeof MY_FIREBASE_CONFIG !== 'undefined' && MY_FIREBASE_CONFIG && MY_FIREBASE_CONFIG.apiKey !== "YOUR_API_KEY") {
               config = MY_FIREBASE_CONFIG;
             }
 
-            // Fallback to offline if no configuration found anywhere
             if (!config) {
               this.dbMode = 'local';
               this.loadDemoSessionData();
@@ -321,7 +314,6 @@
             
             this.dbMode = 'firebase';
 
-            // RULE 3 - Authenticate FIRST
             let userCredential;
             if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
               userCredential = await window.fbSignInWithCustomToken(auth, __initial_auth_token);
@@ -331,7 +323,6 @@
 
             this.user = userCredential.user;
 
-            // Setup snapshots with strictly parsed collections
             this.setupFirestoreListeners(db, appId);
           } catch (err) {
             console.error("Firebase connection error:", err);
@@ -339,7 +330,6 @@
           }
         },
 
-        // DEFENSIVE DATABASE ACCESS AND ERROR GUARD
         handleFirebaseError(err) {
           if (this.dbMode === 'firebase') {
             console.warn("Switching to local storage due to Firebase permission issues:", err);
@@ -356,7 +346,6 @@
           }
         },
 
-        // RULE 1 - STRICT FIRESTORE SUB-COLLECTIONS SNAPSHOT BINDING
         setupFirestoreListeners(db, appId) {
           if (!this.user) return;
 
@@ -382,6 +371,9 @@
               this.seedTasksDatabase(db, appId);
             } else {
               this.tasks = loaded;
+              if (this.claims && this.claims.length > 0) {
+                this.migrateOldDataIfNecessary();
+              }
             }
           }, (err) => {
             console.error("Tasks fetch error:", err);
@@ -409,11 +401,94 @@
             let loaded = [];
             snap.forEach(d => loaded.push({ id: d.id, ...d.data() }));
             this.orders = loaded;
-            this.loading = false;
           }, (err) => {
             console.error("Orders fetch error:", err);
             this.handleFirebaseError(err);
           });
+
+          // 5. Approvals Claims
+          const claimsRef = window.fbCollection(db, 'artifacts', appId, 'public', 'data', 'claims');
+          window.fbOnSnapshot(claimsRef, (snap) => {
+            let loaded = [];
+            snap.forEach(d => loaded.push({ id: d.id, ...d.data() }));
+            this.claims = loaded;
+            this.loading = false;
+            
+            if (this.tasks && this.tasks.length > 0) {
+              this.migrateOldDataIfNecessary();
+            }
+          }, (err) => {
+            console.error("Claims fetch error:", err);
+            this.handleFirebaseError(err);
+          });
+        },
+
+        // BACKWARD DATA COMPATIBILITY MIGRATION RUNNER
+        async migrateOldDataIfNecessary() {
+          let migrated = false;
+          for (const t of this.tasks) {
+            if (t.completedDates && t.completedDates.length > 0) {
+              for (const date of t.completedDates) {
+                const alreadyClaimed = this.claims.some(c => c.taskId === t.id && c.dateOrWeek === date);
+                if (!alreadyClaimed) {
+                  const claimObj = {
+                    taskId: t.id,
+                    taskName: t.name,
+                    icon: t.icon || '📝',
+                    rewardPoints: t.rewardPoints,
+                    rewardXp: t.rewardXp,
+                    frequency: 'daily',
+                    status: 'approved',
+                    dateOrWeek: date,
+                    submittedAt: Date.now(),
+                    approvedAt: Date.now()
+                  };
+                  await this.createClaimDirect(claimObj);
+                  migrated = true;
+                }
+              }
+              t.completedDates = [];
+              await this.syncTask(t);
+            }
+            if (t.completedWeeks && t.completedWeeks.length > 0) {
+              for (const week of t.completedWeeks) {
+                const alreadyClaimed = this.claims.some(c => c.taskId === t.id && c.dateOrWeek === week);
+                if (!alreadyClaimed) {
+                  const claimObj = {
+                    taskId: t.id,
+                    taskName: t.name,
+                    icon: t.icon || '📖',
+                    rewardPoints: t.rewardPoints,
+                    rewardXp: t.rewardXp,
+                    frequency: 'weekly',
+                    status: 'approved',
+                    dateOrWeek: week,
+                    submittedAt: Date.now(),
+                    approvedAt: Date.now()
+                  };
+                  await this.createClaimDirect(claimObj);
+                  migrated = true;
+                }
+              }
+              t.completedWeeks = [];
+              await this.syncTask(t);
+            }
+          }
+          if (migrated) {
+            this.saveLocalData();
+          }
+        },
+
+        async createClaimDirect(claim) {
+          if (this.dbMode === 'firebase') {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
+            const db = window.fbGetFirestore();
+            const claimsCol = window.fbCollection(db, 'artifacts', appId, 'public', 'data', 'claims');
+            await window.fbAddDoc(claimsCol, claim);
+          } else {
+            claim.id = 'clm-' + Date.now() + Math.random().toString(36).substring(2, 5);
+            this.claims.push(claim);
+          }
         },
 
         // LOCAL DEMO / OFFLINE BINDINGS
@@ -427,11 +502,11 @@
             totalEarned: 50
           };
           this.tasks = [
-            { id: '1', name: 'Violin Practice 🎻', rewardPoints: 15, rewardXp: 20, frequency: 'daily', completedDates: [] },
-            { id: '2', name: 'Read for 20 Minutes 📚', rewardPoints: 10, rewardXp: 15, frequency: 'daily', completedDates: [] },
-            { id: '3', name: 'Math Worksheet / Game 🔢', rewardPoints: 12, rewardXp: 18, frequency: 'daily', completedDates: [] },
-            { id: '4', name: 'Tidy Room & Make Bed 🧹', rewardPoints: 8, rewardXp: 10, frequency: 'daily', completedDates: [] },
-            { id: '5', name: 'Finish Weekly Reading Book 📖', rewardPoints: 40, rewardXp: 60, frequency: 'weekly', completedWeeks: [] }
+            { id: '1', name: 'Violin Practice 🎻', rewardPoints: 15, rewardXp: 20, frequency: 'daily' },
+            { id: '2', name: 'Read for 20 Minutes 📚', rewardPoints: 10, rewardXp: 15, frequency: 'daily' },
+            { id: '3', name: 'Math Worksheet / Game 🔢', rewardPoints: 12, rewardXp: 18, frequency: 'daily' },
+            { id: '4', name: 'Tidy Room & Make Bed 🧹', rewardPoints: 8, rewardXp: 10, frequency: 'daily' },
+            { id: '5', name: 'Finish Weekly Reading Book 📖', rewardPoints: 40, rewardXp: 60, frequency: 'weekly' }
           ];
           this.inventory = [
             { id: 'p1', name: 'Scarlet & Violet: Paldean Fates', cost: 120, stock: 3, theme: 'purple' },
@@ -439,8 +514,8 @@
             { id: 'p3', name: 'Scarlet & Violet: Temporal Forces', cost: 100, stock: 5, theme: 'teal' }
           ];
           this.orders = [];
+          this.claims = [];
 
-          // Override demo defaults with stored browser progress if available
           this.loadLocalData();
         },
 
@@ -448,11 +523,11 @@
         async seedTasksDatabase(db, appId) {
           const tasksRef = window.fbCollection(db, 'artifacts', appId, 'public', 'data', 'tasks');
           const defaults = [
-            { name: 'Violin Practice 🎻', rewardPoints: 15, rewardXp: 20, frequency: 'daily', completedDates: [] },
-            { name: 'Read for 20 Minutes 📚', rewardPoints: 10, rewardXp: 15, frequency: 'daily', completedDates: [] },
-            { name: 'Math Worksheet / Game 🔢', rewardPoints: 12, rewardXp: 18, frequency: 'daily', completedDates: [] },
-            { name: 'Tidy Room & Make Bed 🧹', rewardPoints: 8, rewardXp: 10, frequency: 'daily', completedDates: [] },
-            { name: 'Finish Weekly Reading Book 📖', rewardPoints: 40, rewardXp: 60, frequency: 'weekly', completedWeeks: [] }
+            { name: 'Violin Practice 🎻', rewardPoints: 15, rewardXp: 20, frequency: 'daily' },
+            { name: 'Read for 20 Minutes 📚', rewardPoints: 10, rewardXp: 15, frequency: 'daily' },
+            { name: 'Math Worksheet / Game 🔢', rewardPoints: 12, rewardXp: 18, frequency: 'daily' },
+            { name: 'Tidy Room & Make Bed 🧹', rewardPoints: 8, rewardXp: 10, frequency: 'daily' },
+            { name: 'Finish Weekly Reading Book 📖', rewardPoints: 40, rewardXp: 60, frequency: 'weekly' }
           ];
           for (const d of defaults) {
             await window.fbAddDoc(tasksRef, d);
@@ -492,13 +567,30 @@
           return date.toLocaleDateString() + ' @ ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         },
 
-        // CORE FUNCTIONALITY: TOGGLE TASK ACTIONS
+        // CLAIMS QUERY RE-MAP HELPERS
+        getTaskClaimToday(task) {
+          const mark = task.frequency === 'daily' ? this.getTodayString() : this.getCurrentWeekString();
+          return this.claims.find(c => c.taskId === task.id && c.dateOrWeek === mark);
+        },
+
         isTaskCompletedToday(task) {
-          return task.completedDates && task.completedDates.includes(this.getTodayString());
+          const c = this.getTaskClaimToday(task);
+          return c && c.status === 'approved';
         },
 
         isTaskCompletedThisWeek(task) {
-          return task.completedWeeks && task.completedWeeks.includes(this.getCurrentWeekString());
+          const c = this.getTaskClaimToday(task);
+          return c && c.status === 'approved';
+        },
+
+        isTaskPendingToday(task) {
+          const c = this.getTaskClaimToday(task);
+          return c && c.status === 'pending';
+        },
+
+        isTaskPendingThisWeek(task) {
+          const c = this.getTaskClaimToday(task);
+          return c && c.status === 'pending';
         },
 
         getFilteredTasks(freq) {
@@ -515,43 +607,129 @@
           this.confirmModal.show = true;
         },
 
+        // DYNAMIC ADAPTIVE INTERACTION: CHECK OFF WITH APPROVAL LOCK
         async toggleTaskCheck(task) {
           const isDaily = task.frequency === 'daily';
           const completeMark = isDaily ? this.getTodayString() : this.getCurrentWeekString();
-          const arrayKey = isDaily ? 'completedDates' : 'completedWeeks';
-          
-          const isChecked = isDaily ? this.isTaskCompletedToday(task) : this.isTaskCompletedThisWeek(task);
+          const claim = this.getTaskClaimToday(task);
 
-          if (!isChecked) {
-            if (!task[arrayKey]) task[arrayKey] = [];
-            task[arrayKey].push(completeMark);
+          if (!claim) {
+            // Task has never been claimed today -> Submit request to parent
+            const newClaim = {
+              taskId: task.id,
+              taskName: task.name,
+              icon: task.icon || (isDaily ? '📝' : '📖'),
+              rewardPoints: task.rewardPoints,
+              rewardXp: task.rewardXp,
+              frequency: task.frequency,
+              status: 'pending',
+              dateOrWeek: completeMark,
+              submittedAt: Date.now(),
+              approvedAt: null
+            };
 
-            this.profile.points += task.rewardPoints;
-            this.profile.xp += task.rewardXp;
-            this.profile.totalEarned += task.rewardPoints;
+            if (this.dbMode === 'firebase') {
+              const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
+              const db = window.fbGetFirestore();
+              const claimsCol = window.fbCollection(db, 'artifacts', appId, 'public', 'data', 'claims');
+              await window.fbAddDoc(claimsCol, newClaim);
+            } else {
+              newClaim.id = 'clm-' + Date.now();
+              this.claims.push(newClaim);
+              this.saveLocalData();
+            }
 
-            await this.syncProfile();
-            await this.syncTask(task);
-
-            this.calculateAndTriggerLevelUp(task.rewardXp);
-          } else {
-            // Native overlay confirm modal instead of blocking browser popups
+            this.triggerAlert("Submitted! ⏳", `"${task.name}" sent to Professor for approval!`, "info");
+          } else if (claim.status === 'pending') {
+            // Task is currently pending -> Allow child to revoke submission safely
             this.triggerConfirm(
-              "Uncheck Activity?",
-              `You already checked off this task! Unchecking it will deduct ${task.rewardPoints} Coins and ${task.rewardXp} EXP from your balance. Continue?`,
+              "Cancel Request?",
+              `Do you want to cancel your pending approval request for "${task.name}"?`,
               async () => {
-                task[arrayKey] = task[arrayKey].filter(x => x !== completeMark);
-                this.profile.points = Math.max(0, this.profile.points - task.rewardPoints);
-                this.profile.xp = Math.max(0, this.profile.xp - task.rewardXp);
-                this.profile.level = Math.floor(this.profile.xp / 100) + 1;
-
-                await this.syncProfile();
-                await this.syncTask(task);
-                
-                this.triggerAlert("Progress Deducted", "Activity unchecked. Points and EXP updated.", "info");
+                if (this.dbMode === 'firebase') {
+                  const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
+                  const db = window.fbGetFirestore();
+                  await window.fbDeleteDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'claims', claim.id));
+                } else {
+                  this.claims = this.claims.filter(c => c.id !== claim.id);
+                  this.saveLocalData();
+                }
+                this.triggerAlert("Submission Cancelled", "Your task request was deleted.", "info");
               }
             );
+          } else if (claim.status === 'approved') {
+            // Task is already approved -> Lock check to prevent cheating, direct them to parent
+            this.triggerAlert("Already Approved! 🌟", "This activity has been approved. Ask Professor Parent to uncheck it in the panel if needed.", "success");
           }
+        },
+
+        // PROFESSOR APPROVAL CONTROLLERS
+        async approveClaim(claim) {
+          claim.status = 'approved';
+          claim.approvedAt = Date.now();
+
+          // Award Coins & EXP
+          this.profile.points += claim.rewardPoints;
+          this.profile.xp += claim.rewardXp;
+          this.profile.totalEarned += claim.rewardPoints;
+
+          if (this.dbMode === 'firebase') {
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
+            const db = window.fbGetFirestore();
+            await window.fbUpdateDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'claims', claim.id), {
+              status: 'approved',
+              approvedAt: claim.approvedAt
+            });
+          } else {
+            this.saveLocalData();
+          }
+
+          await this.syncProfile();
+          this.calculateAndTriggerLevelUp(claim.rewardXp);
+          this.triggerAlert("Activity Approved! 🎉", `"${claim.taskName}" approved! Coins and EXP gifted.`, "success");
+        },
+
+        async rejectClaim(claim) {
+          this.triggerConfirm(
+            "Reject Request?",
+            `Are you sure you want to decline and cancel the request for "${claim.taskName}"?`,
+            async () => {
+              if (this.dbMode === 'firebase') {
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
+                const db = window.fbGetFirestore();
+                await window.fbDeleteDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'claims', claim.id));
+              } else {
+                this.claims = this.claims.filter(c => c.id !== claim.id);
+                this.saveLocalData();
+              }
+              this.triggerAlert("Claim Deleted", "The pending request was rejected and cleared.", "info");
+            }
+          );
+        },
+
+        // PROFESSOR HISTORY CONTROL: REVERT MISTAKEN APPROVALS
+        async revokeApprovedClaim(claim) {
+          this.triggerConfirm(
+            "Revoke Completed Goal?",
+            `Are you sure you want to uncheck and revoke "${claim.taskName}"? This will deduct ${claim.rewardPoints} Coins and ${claim.rewardXp} EXP from the child's balance.`,
+            async () => {
+              this.profile.points = Math.max(0, this.profile.points - claim.rewardPoints);
+              this.profile.xp = Math.max(0, this.profile.xp - claim.rewardXp);
+              this.profile.level = Math.floor(this.profile.xp / 100) + 1;
+
+              if (this.dbMode === 'firebase') {
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
+                const db = window.fbGetFirestore();
+                await window.fbDeleteDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'claims', claim.id));
+              } else {
+                this.claims = this.claims.filter(c => c.id !== claim.id);
+                this.saveLocalData();
+              }
+
+              await this.syncProfile();
+              this.triggerAlert("Goal Revoked 🗑️", "Activity record unchecked. Points and level recalculated.", "info");
+            }
+          );
         },
 
         calculateAndTriggerLevelUp(addedXp) {
@@ -624,7 +802,6 @@
           );
         },
 
-        // DYNAMIC WURMPLE COMPANION SPEECH (THEME FOCUS)
         getWurmpleSpeech() {
           if (this.profile.currentForm === 'wurmple') {
             if (this.profile.level >= 5) {
@@ -652,7 +829,6 @@
           return "🎉 Congratulations! Max Evolution achieved!";
         },
 
-        // COMPANION EVOLUTION CEREMONY ENGINE
         canEvolve() {
           const form = this.profile.currentForm;
           const lvl = this.profile.level;
@@ -694,7 +870,6 @@
           this.triggerAlert("Evolution Complete! 🎉", "Your Pokémon updated to its next beautiful form!", "success");
         },
 
-        // PROFESSOR MODE VERIFICATION & SECURITY
         openProfessorMode() {
           if (this.parentAuthenticated) {
             this.currentView = 'parent';
@@ -724,7 +899,6 @@
           this.activeTab = 'tasks';
         },
 
-        // PROFESSOR ACTION: FULFILL REDEEMS
         async deliverOrder(order) {
           order.status = 'delivered';
           if (this.dbMode === 'firebase') {
@@ -769,7 +943,6 @@
           );
         },
 
-        // PROFESSOR ACTION: STORE INVENTORY INSERTERS
         openAddPackModal() {
           this.newPack = { name: '', cost: 100, stock: 3, theme: 'purple' };
           this.showNewPackModal = true;
@@ -832,7 +1005,6 @@
           );
         },
 
-        // PROFESSOR ACTION: TASK INSERTERS
         openAddTaskModal() {
           this.newTask = { name: '', rewardPoints: 10, rewardXp: 15, frequency: 'daily', icon: '📝' };
           this.showNewTaskModal = true;
@@ -849,9 +1021,7 @@
             rewardPoints: Number(this.newTask.rewardPoints) || 10,
             rewardXp: Number(this.newTask.rewardXp) || 15,
             frequency: this.newTask.frequency,
-            icon: this.newTask.icon,
-            completedDates: [],
-            completedWeeks: []
+            icon: this.newTask.icon
           };
 
           if (this.dbMode === 'firebase') {
@@ -887,7 +1057,6 @@
           );
         },
 
-        // PROFESSOR ACTION: WALLET BONUSES
         async awardCoins() {
           const valInput = document.getElementById('giftCoinsInput');
           const amt = Number(valInput.value);
@@ -927,10 +1096,15 @@
             "Reset Activity Checkmarks?",
             "Are you sure you want to clear all checked items from your child's list? (This will NOT deduct his earned coins)",
             async () => {
-              for (const t of this.tasks) {
-                t.completedDates = [];
-                t.completedWeeks = [];
-                await this.syncTask(t);
+              if (this.dbMode === 'firebase') {
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
+                const db = window.fbGetFirestore();
+                for (const c of this.claims) {
+                  await window.fbDeleteDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'claims', c.id));
+                }
+              } else {
+                this.claims = [];
+                this.saveLocalData();
               }
               this.triggerAlert("Task Checklist Reset", "All daily and weekly activities have been cleared.", "success");
             }
@@ -940,7 +1114,7 @@
         async factoryReset() {
           this.triggerConfirm(
             "Master Factory Reset?",
-            "⚠️ CRITICAL ACTION: This will permanently wipe all checkmark history, clear coin balances, reset levels back to 1, and reload default inventory configurations. Proceed?",
+            "⚠️ CRITICAL ACTION: This will permanently wipe all claim history, clear coin balances, reset levels back to 1, and reload default inventory configurations. Proceed?",
             async () => {
               this.profile = {
                 points: 0,
@@ -966,10 +1140,14 @@
                 for (const o of this.orders) {
                   await window.fbDeleteDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'orders', o.id));
                 }
+                for (const c of this.claims) {
+                  await window.fbDeleteDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'claims', c.id));
+                }
                 
                 this.seedTasksDatabase(db, appId);
                 this.seedInventoryDatabase(db, appId);
               } else {
+                this.claims = [];
                 this.loadDemoSessionData();
                 this.saveLocalData();
               }
@@ -979,16 +1157,41 @@
           );
         },
 
-        // DYNAMIC UTILITIES
+        // DYNAMIC RENDERING UTILITIES
         getPendingOrdersCount() {
           return this.orders.filter(o => o.status === 'pending').length;
+        },
+
+        getPendingClaimsCount() {
+          return this.claims.filter(c => c.status === 'pending').length;
         },
 
         getSortedOrders() {
           return [...this.orders].sort((a,b) => b.timestamp - a.timestamp);
         },
 
-        // SYNC TO DATASTORES WRAPPERS
+        getGroupedApprovedClaims() {
+          const approved = this.claims.filter(c => c.status === 'approved');
+          approved.sort((a, b) => (b.approvedAt || 0) - (a.approvedAt || 0));
+
+          const groups = {};
+          approved.forEach(c => {
+            const dateStr = new Date(c.approvedAt || c.submittedAt).toLocaleDateString(undefined, { 
+              weekday: 'long', 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric' 
+            });
+            if (!groups[dateStr]) groups[dateStr] = [];
+            groups[dateStr].push(c);
+          });
+
+          return Object.keys(groups).map(date => ({
+            date,
+            items: groups[date]
+          }));
+        },
+
         async syncProfile() {
           if (this.dbMode === 'firebase') {
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
@@ -1004,8 +1207,11 @@
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'wurmple-adventure';
             const db = window.fbGetFirestore();
             await window.fbUpdateDoc(window.fbDoc(db, 'artifacts', appId, 'public', 'data', 'tasks', task.id), {
-              completedDates: task.completedDates || [],
-              completedWeeks: task.completedWeeks || []
+              name: task.name,
+              rewardPoints: task.rewardPoints,
+              rewardXp: task.rewardXp,
+              frequency: task.frequency,
+              icon: task.icon || '📝'
             });
           } else {
             this.saveLocalData();
@@ -1025,7 +1231,7 @@
     };
   </script>
 
-  <!-- Alpine.js (Loads deferred, guaranteed to execute after our global window.summerApp and SoundEffects are registered) -->
+  <!-- Alpine.js -->
   <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </head>
 <body class="bg-gradient-to-b from-emerald-50 via-green-100 to-emerald-200 min-h-screen relative overflow-x-hidden">
@@ -1043,7 +1249,7 @@
     <!-- Top Header -->
     <header class="flex flex-col md:flex-row justify-between items-center bg-white bg-opacity-95 rounded-2xl p-4 shadow-lg border-2 border-emerald-400 mb-6 gap-4">
       <div class="flex items-center gap-4">
-        <!-- Mascot Indicator (with smart fallback to emojis if PNG load fails) -->
+        <!-- Mascot Indicator -->
         <div class="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center border-2 border-emerald-300 overflow-hidden shrink-0">
           <template x-if="!imageErrors[profile.currentForm]">
             <img :src="pokemonImages[profile.currentForm]" 
@@ -1132,7 +1338,7 @@
               <p x-text="getWurmpleSpeech()"></p>
             </div>
 
-            <!-- Companion Media (Dynamic PNG artwork with smart vector fallbacks) -->
+            <!-- Companion Media -->
             <div class="my-6 relative w-48 h-48 flex items-center justify-center rounded-full p-2 bg-emerald-50 border-4 border-dashed border-emerald-200 overflow-hidden">
               <template x-if="!imageErrors[profile.currentForm]">
                 <img :src="pokemonImages[profile.currentForm]" 
@@ -1143,7 +1349,7 @@
               
               <template x-if="imageErrors[profile.currentForm]">
                 <div class="w-full h-full flex items-center justify-center">
-                  <!-- Wurmple form vector fallback -->
+                  <!-- Fallback vectors (Wurmple, Silcoon, Cascoon, Beautifly, Dustox) -->
                   <template x-if="profile.currentForm === 'wurmple'">
                     <svg viewBox="0 0 120 120" class="w-40 h-40 drop-shadow-lg transform hover:scale-105 transition-transform">
                       <circle cx="85" cy="70" r="16" fill="#EF4444" stroke="#1F2937" stroke-width="3.5" />
@@ -1164,70 +1370,33 @@
                       <circle cx="40" cy="78" r="5" fill="#FFF" stroke="#1F2937" stroke-width="2.5" />
                     </svg>
                   </template>
-
-                  <!-- Silcoon form vector fallback -->
                   <template x-if="profile.currentForm === 'silcoon'">
                     <svg viewBox="0 0 120 120" class="w-40 h-40 drop-shadow-lg transform hover:scale-105 transition-transform">
                       <ellipse cx="60" cy="60" rx="36" ry="29" fill="#F9FAFB" stroke="#1F2937" stroke-width="4" />
-                      <path d="M 24,60 L 6,60 M 96,60 L 114,60 M 60,31 L 60,11 M 60,89 L 60,109 M 35,37 L 18,22 M 85,37 L 102,22 M 35,83 L 19,98 M 85,83 L 101,98" stroke="#D1D5DB" stroke-width="3" stroke-linecap="round" />
-                      <path d="M 24,60 L 10,60 M 96,60 L 110,60 M 60,31 L 60,15 M 60,89 L 60,105 M 35,37 L 20,25 M 85,37 L 100,25" stroke="#1F2937" stroke-width="3.5" stroke-linecap="round" />
+                      <path d="M 24,60 L 6,60 M 96,60 L 114,60 M 60,31 L 60,11 M 60,89 L 60,109" stroke="#D1D5DB" stroke-width="3" />
                       <circle cx="48" cy="60" r="5" fill="#EC4899" />
-                      <circle cx="48" cy="60" r="1.5" fill="#FFF" />
                       <circle cx="72" cy="60" r="5" fill="#EC4899" />
-                      <circle cx="72" cy="60" r="1.5" fill="#FFF" />
-                      <path d="M 40,52 Q 48,55 56,52" fill="none" stroke="#D1D5DB" stroke-width="1.5" />
-                      <path d="M 64,52 Q 72,55 80,52" fill="none" stroke="#D1D5DB" stroke-width="1.5" />
                     </svg>
                   </template>
-
-                  <!-- Cascoon form vector fallback -->
                   <template x-if="profile.currentForm === 'cascoon'">
                     <svg viewBox="0 0 120 120" class="w-40 h-40 drop-shadow-lg transform hover:scale-105 transition-transform">
                       <ellipse cx="60" cy="60" rx="36" ry="29" fill="#D8B4FE" stroke="#1F2937" stroke-width="4" />
-                      <path d="M 24,60 L 5,60 M 96,60 L 115,60 M 60,31 L 60,10 M 60,89 L 60,110 M 35,37 L 16,21 M 85,37 L 104,21" stroke="#A78BFA" stroke-width="3.5" stroke-linecap="round" />
-                      <path d="M 24,60 L 11,60 M 96,60 L 109,60 M 60,31 L 60,16 M 60,89 L 60,104" stroke="#1F2937" stroke-width="3.5" stroke-linecap="round" />
+                      <path d="M 24,60 L 5,60 M 96,60 L 115,60 M 60,31 L 60,10 M 60,89 L 60,110" stroke="#A78BFA" stroke-width="3.5" />
                       <circle cx="48" cy="60" r="5" fill="#A3E635" stroke="#1F2937" stroke-width="1.5" />
-                      <circle cx="48" cy="60" r="1.5" fill="#FFF" />
                       <circle cx="72" cy="60" r="5" fill="#A3E635" stroke="#1F2937" stroke-width="1.5" />
-                      <circle cx="72" cy="60" r="1.5" fill="#FFF" />
                     </svg>
                   </template>
-
-                  <!-- Beautifly form vector fallback -->
                   <template x-if="profile.currentForm === 'beautifly'">
                     <svg viewBox="0 0 120 120" class="w-40 h-40 drop-shadow-lg transform hover:scale-105 transition-transform">
                       <path d="M 60,60 C 15,15 5,35 15,70 C 22,86 42,86 60,60" fill="#1F2937" stroke="#1F2937" stroke-width="3.5" />
-                      <path d="M 54,54 C 25,25 15,40 25,64 C 29,71 42,76 54,54" fill="#FBBF24" />
-                      <circle cx="32" cy="46" r="6" fill="#EF4444" />
-                      <circle cx="40" cy="58" r="4.5" fill="#3B82F6" />
-                      
-                      <path d="M 60,60 C 105,15 115,35 105,70 C 98,86 78,86 60,60" fill="#1F2937" stroke="#1F2937" stroke-width="3.5" />
-                      <path d="M 66,54 C 95,25 105,40 95,64 C 91,71 78,76 66,54" fill="#FBBF24" />
-                      <circle cx="88" cy="46" r="6" fill="#EF4444" />
-                      <circle cx="80" cy="58" r="4.5" fill="#3B82F6" />
-
                       <ellipse cx="60" cy="60" rx="7" ry="20" fill="#4B5563" stroke="#1F2937" stroke-width="3" />
                       <circle cx="60" cy="38" r="9" fill="#4B5563" stroke="#1F2937" stroke-width="3" />
-                      <circle cx="56" cy="36" r="3.5" fill="#60A5FA" />
-                      <circle cx="64" cy="36" r="3.5" fill="#60A5FA" />
-                      <path d="M 60,45 Q 60,54 55,54 Q 51,54 51,49 Q 51,45 55,45" fill="none" stroke="#1F2937" stroke-width="2" />
                     </svg>
                   </template>
-
-                  <!-- Dustox form vector fallback -->
                   <template x-if="profile.currentForm === 'dustox'">
                     <svg viewBox="0 0 120 120" class="w-40 h-40 drop-shadow-lg transform hover:scale-105 transition-transform">
                       <path d="M 60,55 C 15,35 5,45 25,80 C 35,92 52,78 60,55" fill="#10B981" stroke="#1F2937" stroke-width="3.5" />
-                      <circle cx="36" cy="64" r="5.5" fill="#EC4899" />
-                      
-                      <path d="M 60,55 C 105,35 115,45 95,80 C 85,92 68,78 60,55" fill="#10B981" stroke="#1F2937" stroke-width="3.5" />
-                      <circle cx="84" cy="64" r="5.5" fill="#EC4899" />
-
                       <ellipse cx="60" cy="62" rx="9" ry="20" fill="#F97316" stroke="#1F2937" stroke-width="3" />
-                      <circle cx="60" cy="41" r="8" fill="#F97316" stroke="#1F2937" stroke-width="3" />
-                      <circle cx="56" cy="39" r="4.2" fill="#EC4899" stroke="#1F2937" stroke-width="1" />
-                      <circle cx="64" cy="39" r="4.2" fill="#EC4899" stroke="#1F2937" stroke-width="1" />
-                      <path d="M 57,34 Q 42,20 31,23 M 63,34 Q 78,20 89,23" fill="none" stroke="#FBBF24" stroke-width="2.5" stroke-linecap="round" />
                     </svg>
                   </template>
                 </div>
@@ -1276,7 +1445,7 @@
             </button>
           </div>
 
-          <!-- TAB 1: TASKS CHECKLIST -->
+          <!-- TAB 1: TASKS CHECKLIST (WITH APPROVAL INTELLIGENCE) -->
           <div x-show="activeTab === 'tasks'" class="space-y-6">
             <!-- Daily activities -->
             <div class="bg-white rounded-3xl p-6 shadow-lg border-2 border-emerald-300">
@@ -1284,12 +1453,17 @@
                 <h3 class="pokemon-title text-lg text-emerald-800 flex items-center gap-2">
                   <i class="fa-solid fa-sun text-amber-500 animate-spin" style="animation-duration: 10s;"></i> Daily Activities
                 </h3>
-                <span class="text-xs bg-emerald-100 text-emerald-800 font-bold px-2 py-1 rounded-full">Resets Every Midnight</span>
+                <span class="text-xs bg-emerald-100 text-emerald-800 font-bold px-2 py-1 rounded-full">Professor Approves Claims</span>
               </div>
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <template x-for="task in getFilteredTasks('daily')" :key="task.id">
-                  <div class="border-2 rounded-2xl p-4 flex justify-between items-center transition-all bg-white hover:border-emerald-300"
-                       :class="isTaskCompletedToday(task) ? 'bg-emerald-50 bg-opacity-70 border-emerald-400' : 'border-gray-200'">
+                  <div @click="toggleTaskCheck(task)" 
+                       class="border-2 rounded-2xl p-4 flex justify-between items-center transition-all bg-white cursor-pointer select-none"
+                       :class="{
+                         'bg-emerald-50 bg-opacity-70 border-emerald-400': isTaskCompletedToday(task),
+                         'bg-amber-50 bg-opacity-70 border-amber-400 animate-pulse': isTaskPendingToday(task),
+                         'border-gray-200 hover:border-emerald-300 hover:shadow-sm': !isTaskCompletedToday(task) && !isTaskPendingToday(task)
+                       }">
                     <div class="flex items-center gap-3">
                       <span class="text-3xl" x-text="task.icon || '📝'"></span>
                       <div>
@@ -1304,11 +1478,22 @@
                         </div>
                       </div>
                     </div>
-                    <button @click="toggleTaskCheck(task)" 
-                            class="w-10 h-10 rounded-full flex items-center justify-center border-3 transition-transform active:scale-90"
-                            :class="isTaskCompletedToday(task) ? 'bg-emerald-500 border-emerald-600 text-white' : 'border-gray-300 hover:border-emerald-400 hover:bg-emerald-50 bg-white'">
-                      <i class="fa-solid fa-check text-lg" x-show="isTaskCompletedToday(task)"></i>
-                    </button>
+                    
+                    <div class="flex items-center gap-2">
+                      <span x-show="isTaskPendingToday(task)" class="text-xs font-bold text-amber-600 flex items-center gap-1 bg-amber-100 px-2 py-0.5 rounded-full">
+                        <i class="fa-solid fa-clock animate-spin"></i> Pending
+                      </span>
+                      <button @click.stop="toggleTaskCheck(task)" 
+                              class="w-10 h-10 rounded-full flex items-center justify-center border-3 transition-transform active:scale-90"
+                              :class="{
+                                'bg-emerald-500 border-emerald-600 text-white': isTaskCompletedToday(task),
+                                'bg-amber-400 border-amber-500 text-amber-950': isTaskPendingToday(task),
+                                'border-gray-300 hover:border-emerald-400 hover:bg-emerald-50 bg-white': !isTaskCompletedToday(task) && !isTaskPendingToday(task)
+                              }">
+                        <i class="fa-solid fa-check text-lg" x-show="isTaskCompletedToday(task)"></i>
+                        <i class="fa-solid fa-hourglass text-sm" x-show="isTaskPendingToday(task)"></i>
+                      </button>
+                    </div>
                   </div>
                 </template>
               </div>
@@ -1324,8 +1509,13 @@
               </div>
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <template x-for="task in getFilteredTasks('weekly')" :key="task.id">
-                  <div class="border-2 rounded-2xl p-4 flex justify-between items-center transition-all bg-white hover:border-emerald-300"
-                       :class="isTaskCompletedThisWeek(task) ? 'bg-emerald-50 bg-opacity-70 border-emerald-400' : 'border-gray-200'">
+                  <div @click="toggleTaskCheck(task)" 
+                       class="border-2 rounded-2xl p-4 flex justify-between items-center transition-all bg-white cursor-pointer select-none"
+                       :class="{
+                         'bg-emerald-50 bg-opacity-70 border-emerald-400': isTaskCompletedThisWeek(task),
+                         'bg-amber-50 bg-opacity-70 border-amber-400 animate-pulse': isTaskPendingThisWeek(task),
+                         'border-gray-200 hover:border-emerald-300 hover:shadow-sm': !isTaskCompletedThisWeek(task) && !isTaskPendingThisWeek(task)
+                       }">
                     <div class="flex items-center gap-3">
                       <span class="text-3xl" x-text="task.icon || '📖'"></span>
                       <div>
@@ -1340,11 +1530,22 @@
                         </div>
                       </div>
                     </div>
-                    <button @click="toggleTaskCheck(task)" 
-                            class="w-10 h-10 rounded-full flex items-center justify-center border-3 transition-transform active:scale-90"
-                            :class="isTaskCompletedThisWeek(task) ? 'bg-emerald-500 border-emerald-600 text-white' : 'border-gray-300 hover:border-emerald-400 hover:bg-emerald-50 bg-white'">
-                      <i class="fa-solid fa-check text-lg" x-show="isTaskCompletedThisWeek(task)"></i>
-                    </button>
+                    
+                    <div class="flex items-center gap-2">
+                      <span x-show="isTaskPendingThisWeek(task)" class="text-xs font-bold text-amber-600 flex items-center gap-1 bg-amber-100 px-2 py-0.5 rounded-full">
+                        <i class="fa-solid fa-clock animate-spin"></i> Pending
+                      </span>
+                      <button @click.stop="toggleTaskCheck(task)" 
+                              class="w-10 h-10 rounded-full flex items-center justify-center border-3 transition-transform active:scale-90"
+                              :class="{
+                                'bg-emerald-500 border-emerald-600 text-white': isTaskCompletedThisWeek(task),
+                                'bg-amber-400 border-amber-500 text-amber-950': isTaskPendingThisWeek(task),
+                                'border-gray-300 hover:border-emerald-400 hover:bg-emerald-50 bg-white': !isTaskCompletedThisWeek(task) && !isTaskPendingThisWeek(task)
+                              }">
+                        <i class="fa-solid fa-check text-lg" x-show="isTaskCompletedThisWeek(task)"></i>
+                        <i class="fa-solid fa-hourglass text-sm" x-show="isTaskPendingThisWeek(task)"></i>
+                      </button>
+                    </div>
                   </div>
                 </template>
               </div>
@@ -1532,6 +1733,12 @@
               <i class="fa-solid fa-truck"></i> Fulfill Deliveries
               <span x-show="getPendingOrdersCount() > 0" class="ml-auto bg-yellow-300 text-red-955 px-2 py-0.5 rounded-full text-xs font-black animate-pulse" x-text="getPendingOrdersCount()"></span>
             </button>
+            <button @click="parentActiveTab = 'approvals'" 
+                    class="w-full py-2.5 px-4 text-left rounded-xl font-bold text-sm transition-all flex items-center gap-2.5"
+                    :class="parentActiveTab === 'approvals' ? 'bg-red-500 text-white shadow-sm' : 'text-gray-700 hover:bg-red-50'">
+              <i class="fa-solid fa-clipboard-check"></i> Task Approvals
+              <span x-show="getPendingClaimsCount() > 0" class="ml-auto bg-yellow-300 text-red-955 px-2 py-0.5 rounded-full text-xs font-black animate-pulse" x-text="getPendingClaimsCount()"></span>
+            </button>
             <button @click="parentActiveTab = 'inventory'" 
                     class="w-full py-2.5 px-4 text-left rounded-xl font-bold text-sm transition-all flex items-center gap-2.5"
                     :class="parentActiveTab === 'inventory' ? 'bg-red-500 text-white shadow-sm' : 'text-gray-700 hover:bg-red-50'">
@@ -1541,6 +1748,11 @@
                     class="w-full py-2.5 px-4 text-left rounded-xl font-bold text-sm transition-all flex items-center gap-2.5"
                     :class="parentActiveTab === 'tasks' ? 'bg-red-500 text-white shadow-sm' : 'text-gray-700 hover:bg-red-50'">
               <i class="fa-solid fa-list-check"></i> Manage Summer Tasks
+            </button>
+            <button @click="parentActiveTab = 'history'" 
+                    class="w-full py-2.5 px-4 text-left rounded-xl font-bold text-sm transition-all flex items-center gap-2.5"
+                    :class="parentActiveTab === 'history' ? 'bg-red-500 text-white shadow-sm' : 'text-gray-700 hover:bg-red-50'">
+              <i class="fa-solid fa-clock-rotate-left"></i> Activity Journal
             </button>
             <button @click="parentActiveTab = 'settings'" 
                     class="w-full py-2.5 px-4 text-left rounded-xl font-bold text-sm transition-all flex items-center gap-2.5"
@@ -1629,7 +1841,54 @@ service cloud.firestore {
               </template>
             </div>
 
-            <!-- PANEL B: MANAGE BOOSTER STORES -->
+            <!-- PANEL B: TASK APPROVAL QUEUE -->
+            <div x-show="parentActiveTab === 'approvals'" class="bg-white rounded-3xl p-6 shadow-lg border-2 border-red-200">
+              <div class="border-b border-gray-100 pb-3 mb-4 flex justify-between items-center">
+                <div>
+                  <h3 class="pokemon-title text-lg text-red-800">Task Approvals</h3>
+                  <p class="text-xs text-gray-500 font-semibold">Verify completed daily tasks or weekly challenges and award Coins & EXP!</p>
+                </div>
+                <span class="text-xs font-bold text-red-500 bg-red-50 px-2.5 py-1 rounded-full border border-red-200" x-text="`Pending: ${getPendingClaimsCount()}`"></span>
+              </div>
+
+              <template x-if="getPendingClaimsCount() === 0">
+                <div class="text-center py-12 text-gray-400">
+                  <i class="fa-solid fa-circle-check text-5xl mb-3 block text-green-400"></i>
+                  <p class="font-semibold text-sm">No tasks currently waiting for approval. Excellent compliance!</p>
+                </div>
+              </template>
+              <template x-if="getPendingClaimsCount() > 0">
+                <div class="space-y-4">
+                  <template x-for="claim in claims.filter(c => c.status === 'pending')" :key="claim.id">
+                    <div class="border-2 border-amber-300 bg-amber-50 bg-opacity-30 rounded-2xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                      <div class="flex items-center gap-3">
+                        <span class="text-3xl" x-text="claim.icon"></span>
+                        <div>
+                          <span class="text-xs uppercase font-black text-amber-700 tracking-wider" x-text="claim.frequency + ' task submission'"></span>
+                          <h4 class="font-bold text-gray-800 text-base" x-text="claim.taskName"></h4>
+                          <div class="text-xs font-bold text-gray-500 mt-1">
+                            <span>Value: <span class="text-amber-600 font-extrabold">+<span x-text="claim.rewardPoints"></span> Coins</span>, <span class="text-green-600 font-extrabold">+<span x-text="claim.rewardXp"></span> EXP</span></span> • 
+                            <span x-text="formatDate(claim.submittedAt)"></span>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="flex items-center gap-2 self-stretch md:self-auto shrink-0">
+                        <button @click="rejectClaim(claim)" 
+                                class="flex-1 md:flex-none bg-white hover:bg-red-50 text-red-600 border border-red-200 font-extrabold text-xs py-2 px-3 rounded-lg transition-all">
+                          Reject ❌
+                        </button>
+                        <button @click="approveClaim(claim)" 
+                                class="flex-1 md:flex-none bg-green-500 hover:bg-green-600 text-white font-extrabold text-xs py-2 px-4 rounded-lg shadow transition-all flex items-center justify-center gap-1.5">
+                          <i class="fa-solid fa-check"></i> Approve & Award! 🎉
+                        </button>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </template>
+            </div>
+
+            <!-- PANEL C: MANAGE BOOSTER STORES -->
             <div x-show="parentActiveTab === 'inventory'" class="bg-white rounded-3xl p-6 shadow-lg border-2 border-red-200 space-y-6">
               <div class="flex justify-between items-center border-b border-gray-100 pb-3">
                 <div>
@@ -1675,7 +1934,7 @@ service cloud.firestore {
               </div>
             </div>
 
-            <!-- PANEL C: MANAGE TASKS ACTIVITIES -->
+            <!-- PANEL D: MANAGE TASKS ACTIVITIES -->
             <div x-show="parentActiveTab === 'tasks'" class="bg-white rounded-3xl p-6 shadow-lg border-2 border-red-200 space-y-6">
               <div class="flex justify-between items-center border-b border-gray-100 pb-3">
                 <div>
@@ -1709,7 +1968,62 @@ service cloud.firestore {
               </div>
             </div>
 
-            <!-- PANEL D: POCKET ADJUSTS & SETTINGS -->
+            <!-- PANEL E: CHRONOLOGICAL ACTIVITY JOURNAL -->
+            <div x-show="parentActiveTab === 'history'" class="bg-white rounded-3xl p-6 shadow-lg border-2 border-red-200">
+              <div class="border-b border-gray-100 pb-3 mb-6">
+                <h3 class="pokemon-title text-lg text-red-800">Summer Activity Log</h3>
+                <p class="text-xs text-gray-500 font-semibold">Track historical daily goals completed by your son, with the option to revoke mistaken approvals.</p>
+              </div>
+
+              <template x-if="getGroupedApprovedClaims().length === 0">
+                <div class="text-center py-12 text-gray-400">
+                  <i class="fa-solid fa-timeline text-5xl mb-3 block opacity-30"></i>
+                  <p class="font-semibold text-sm">No approved activities logged yet. Approve a task request to start the journal!</p>
+                </div>
+              </template>
+
+              <template x-if="getGroupedApprovedClaims().length > 0">
+                <div class="relative pl-6 border-l-2 border-red-150 space-y-8">
+                  <template x-for="group in getGroupedApprovedClaims()" :key="group.date">
+                    <div class="relative">
+                      <!-- Timeline node -->
+                      <div class="absolute -left-[31px] top-1 w-4 h-4 rounded-full bg-red-400 border-4 border-white shadow-sm"></div>
+                      
+                      <h4 class="font-extrabold text-sm text-red-800 mb-3" x-text="group.date"></h4>
+                      
+                      <div class="space-y-3">
+                        <template x-for="item in group.items" :key="item.id">
+                          <div class="bg-slate-50 border border-slate-100 rounded-xl p-3 flex justify-between items-center hover:bg-slate-100 transition-all">
+                            <div class="flex items-center gap-3">
+                              <span class="text-2xl" x-text="item.icon"></span>
+                              <div>
+                                <h5 class="font-bold text-gray-800 text-sm" x-text="item.taskName"></h5>
+                                <div class="flex items-center gap-2 mt-0.5 text-[10px] text-gray-500 font-semibold">
+                                  <span class="text-amber-600 font-bold">+<span x-text="item.rewardPoints"></span> Coins</span>
+                                  <span>•</span>
+                                  <span class="text-green-600 font-bold">+<span x-text="item.rewardXp"></span> EXP</span>
+                                  <span>•</span>
+                                  <span x-text="'Approved @ ' + new Date(item.approvedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })"></span>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            <!-- Revoke command -->
+                            <button @click="revokeApprovedClaim(item)" 
+                                    class="text-xs text-red-500 hover:text-red-700 hover:bg-red-50 font-bold px-2.5 py-1.5 rounded-lg border border-transparent hover:border-red-100 transition-all"
+                                    title="Revoke this approval and deduct the rewards">
+                              <i class="fa-solid fa-rotate-left mr-1"></i> Revoke
+                            </button>
+                          </div>
+                        </template>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </template>
+            </div>
+
+            <!-- PANEL F: POCKET ADJUSTS & SETTINGS -->
             <div x-show="parentActiveTab === 'settings'" class="bg-white rounded-3xl p-6 shadow-lg border-2 border-red-200 space-y-6">
               <div class="border-b border-gray-100 pb-3">
                 <h3 class="pokemon-title text-lg text-red-800">Wallet Controls & Master Config</h3>
@@ -1762,7 +2076,7 @@ service cloud.firestore {
                 <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border p-4 rounded-2xl bg-orange-50 border-orange-200">
                   <div>
                     <span class="block font-bold text-sm text-orange-800">Force Tasks Reset</span>
-                    <span class="text-xs text-gray-500 font-medium">Manually uncheck all checked daily/weekly accomplishments right now.</span>
+                    <span class="text-xs text-gray-500 font-medium">Manually uncheck and wipe all claims accomplishments right now.</span>
                   </div>
                   <button @click="forceTasksReset()" class="bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold py-2 px-4 rounded-lg shadow-sm transition-all">
                     Reset Checklist
@@ -1772,7 +2086,7 @@ service cloud.firestore {
                 <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border border-red-200 p-4 rounded-2xl bg-red-50">
                   <div>
                     <span class="block font-bold text-sm text-red-800">Database Factory Reset</span>
-                    <span class="text-xs text-gray-500 font-medium">Wipe out all redemptions, restore default booster packs, and zero current levels.</span>
+                    <span class="text-xs text-gray-500 font-medium">Wipe out all claims history, restore default booster packs, and zero current levels.</span>
                   </div>
                   <button @click="factoryReset()" class="bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-2 px-4 rounded-lg shadow-sm transition-all">
                     Wipe & Reload Defaults
