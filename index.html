@@ -207,7 +207,9 @@
           level: 1,
           currentForm: 'wurmple',
           parentPin: 'wurmple',
-          totalEarned: 0
+          totalEarned: 0,
+          dailyLimit: 0,
+          weeklyLimit: 0
         },
 
         // Primary collections
@@ -231,7 +233,7 @@
           onConfirm: null
         },
 
-        newTask: { name: '', rewardPoints: 10, rewardXp: 15, frequency: 'daily', icon: '📝' },
+        newTask: { name: '', rewardPoints: 10, rewardXp: 15, frequency: 'daily', icon: '📝', maxLimit: 0 },
         newPack: { name: '', cost: 100, stock: 3, theme: 'purple' },
 
         // Toast Alerts
@@ -499,14 +501,17 @@
             level: 1,
             currentForm: 'wurmple',
             parentPin: 'wurmple',
-            totalEarned: 50
+            totalEarned: 50,
+            dailyLimit: 0,
+            weeklyLimit: 0
           };
           this.tasks = [
-            { id: '1', name: 'Violin Practice 🎻', rewardPoints: 15, rewardXp: 20, frequency: 'daily' },
-            { id: '2', name: 'Read for 20 Minutes 📚', rewardPoints: 10, rewardXp: 15, frequency: 'daily' },
-            { id: '3', name: 'Math Worksheet / Game 🔢', rewardPoints: 12, rewardXp: 18, frequency: 'daily' },
-            { id: '4', name: 'Tidy Room & Make Bed 🧹', rewardPoints: 8, rewardXp: 10, frequency: 'daily' },
-            { id: '5', name: 'Finish Weekly Reading Book 📖', rewardPoints: 40, rewardXp: 60, frequency: 'weekly' }
+            { id: '1', name: 'Violin Practice 🎻', rewardPoints: 15, rewardXp: 20, frequency: 'daily', maxLimit: 0 },
+            { id: '2', name: 'Read for 20 Minutes 📚', rewardPoints: 10, rewardXp: 15, frequency: 'daily', maxLimit: 0 },
+            { id: '3', name: 'Math Worksheet / Game 🔢', rewardPoints: 12, rewardXp: 18, frequency: 'daily', maxLimit: 0 },
+            { id: '4', name: 'Tidy Room & Make Bed 🧹', rewardPoints: 8, rewardXp: 10, frequency: 'daily', maxLimit: 0 },
+            { id: '5', name: 'Finish Weekly Reading Book 📖', rewardPoints: 40, rewardXp: 60, frequency: 'weekly', maxLimit: 0 },
+            { id: '6', name: 'Visit a Museum 🏛️', rewardPoints: 50, rewardXp: 80, frequency: 'weekly', maxLimit: 2 }
           ];
           this.inventory = [
             { id: 'p1', name: 'Scarlet & Violet: Paldean Fates', cost: 120, stock: 3, theme: 'purple' },
@@ -523,11 +528,12 @@
         async seedTasksDatabase(db, appId) {
           const tasksRef = window.fbCollection(db, 'artifacts', appId, 'public', 'data', 'tasks');
           const defaults = [
-            { name: 'Violin Practice 🎻', rewardPoints: 15, rewardXp: 20, frequency: 'daily' },
-            { name: 'Read for 20 Minutes 📚', rewardPoints: 10, rewardXp: 15, frequency: 'daily' },
-            { name: 'Math Worksheet / Game 🔢', rewardPoints: 12, rewardXp: 18, frequency: 'daily' },
-            { name: 'Tidy Room & Make Bed 🧹', rewardPoints: 8, rewardXp: 10, frequency: 'daily' },
-            { name: 'Finish Weekly Reading Book 📖', rewardPoints: 40, rewardXp: 60, frequency: 'weekly' }
+            { name: 'Violin Practice 🎻', rewardPoints: 15, rewardXp: 20, frequency: 'daily', maxLimit: 0 },
+            { name: 'Read for 20 Minutes 📚', rewardPoints: 10, rewardXp: 15, frequency: 'daily', maxLimit: 0 },
+            { name: 'Math Worksheet / Game 🔢', rewardPoints: 12, rewardXp: 18, frequency: 'daily', maxLimit: 0 },
+            { name: 'Tidy Room & Make Bed 🧹', rewardPoints: 8, rewardXp: 10, frequency: 'daily', maxLimit: 0 },
+            { name: 'Finish Weekly Reading Book 📖', rewardPoints: 40, rewardXp: 60, frequency: 'weekly', maxLimit: 0 },
+            { name: 'Visit a Museum 🏛️', rewardPoints: 50, rewardXp: 80, frequency: 'weekly', maxLimit: 2 }
           ];
           for (const d of defaults) {
             await window.fbAddDoc(tasksRef, d);
@@ -593,8 +599,71 @@
           return c && c.status === 'pending';
         },
 
+        // SUMMER-LONG LIMIT UTILITY CALCULATORS
+        getTaskCompletedCount(task) {
+          return this.claims.filter(c => c.taskId === task.id && c.status === 'approved').length;
+        },
+
+        getTaskPendingCount(task) {
+          return this.claims.filter(c => c.taskId === task.id && c.status === 'pending').length;
+        },
+
+        isTaskFullyCompletedLimit(task) {
+          return task.maxLimit > 0 && this.getTaskCompletedCount(task) >= task.maxLimit;
+        },
+
+        isTaskAtLimitLimit(task) {
+          return task.maxLimit > 0 && (this.getTaskCompletedCount(task) + this.getTaskPendingCount(task)) >= task.maxLimit;
+        },
+
+        // SEEDED RANDOM SHUFFLE FOR STABLE ROTATION
+        seededRandom(seedString) {
+          let hash = 0;
+          for (let i = 0; i < seedString.length; i++) {
+            hash = seedString.charCodeAt(i) + ((hash << 5) - hash);
+          }
+          const x = Math.sin(hash) * 10000;
+          return x - Math.floor(x);
+        },
+
+        getRange(count) {
+          return Array.from({ length: count }, (_, i) => i + 1);
+        },
+
         getFilteredTasks(freq) {
-          return this.tasks.filter(t => t.frequency === freq);
+          const allTasksOfFreq = this.tasks.filter(t => t.frequency === freq);
+          const limit = freq === 'daily' ? (this.profile.dailyLimit || 0) : (this.profile.weeklyLimit || 0);
+
+          // If limit is unset, 0, or greater than our available pool, display everything
+          if (limit <= 0 || limit >= allTasksOfFreq.length) {
+            return allTasksOfFreq;
+          }
+
+          // Prioritize already claimed (pending or approved) tasks today so they never disappear mid-day
+          const activeTasks = allTasksOfFreq.filter(t => {
+            const claim = this.getTaskClaimToday(t);
+            return claim && (claim.status === 'pending' || claim.status === 'approved');
+          });
+
+          const inactiveTasks = allTasksOfFreq.filter(t => !activeTasks.includes(t));
+
+          // If active completed/pending tasks already meet/exceed the limit, show them all
+          if (activeTasks.length >= limit) {
+            return activeTasks;
+          }
+
+          // Otherwise, fill the remaining slots from the inactive tasks using deterministic seeded random shuffling
+          const seed = freq === 'daily' ? this.getTodayString() : this.getCurrentWeekString();
+          const shuffledInactive = [...inactiveTasks];
+          for (let i = shuffledInactive.length - 1; i > 0; i--) {
+            const r = Math.floor(this.seededRandom(seed + '-' + i) * (i + 1));
+            const temp = shuffledInactive[i];
+            shuffledInactive[i] = shuffledInactive[r];
+            shuffledInactive[r] = temp;
+          }
+
+          const remainingSlots = limit - activeTasks.length;
+          return [...activeTasks, ...shuffledInactive.slice(0, remainingSlots)];
         },
 
         triggerConfirm(title, message, callback) {
@@ -607,13 +676,19 @@
           this.confirmModal.show = true;
         },
 
-        // DYNAMIC ADAPTIVE INTERACTION: CHECK OFF WITH APPROVAL LOCK
+        // DYNAMIC ADAPTIVE INTERACTION: CHECK OFF WITH APPROVAL LOCK & SUMMER LIMIT BLOCKS
         async toggleTaskCheck(task) {
           const isDaily = task.frequency === 'daily';
           const completeMark = isDaily ? this.getTodayString() : this.getCurrentWeekString();
           const claim = this.getTaskClaimToday(task);
 
           if (!claim) {
+            // Check summer-long cap limits before dispatching the claim submission
+            if (this.isTaskAtLimitLimit(task)) {
+              this.triggerAlert("Limit Reached! 🏆", `You've already completed "${task.name}" the maximum of ${task.maxLimit} times this summer! Great job!`, "info");
+              return;
+            }
+
             // Task has never been claimed today -> Submit request to parent
             const newClaim = {
               taskId: task.id,
@@ -1006,7 +1081,7 @@
         },
 
         openAddTaskModal() {
-          this.newTask = { name: '', rewardPoints: 10, rewardXp: 15, frequency: 'daily', icon: '📝' };
+          this.newTask = { name: '', rewardPoints: 10, rewardXp: 15, frequency: 'daily', icon: '📝', maxLimit: 0 };
           this.showNewTaskModal = true;
         },
 
@@ -1021,7 +1096,8 @@
             rewardPoints: Number(this.newTask.rewardPoints) || 10,
             rewardXp: Number(this.newTask.rewardXp) || 15,
             frequency: this.newTask.frequency,
-            icon: this.newTask.icon
+            icon: this.newTask.icon,
+            maxLimit: Number(this.newTask.maxLimit) || 0
           };
 
           if (this.dbMode === 'firebase') {
@@ -1122,7 +1198,9 @@
                 level: 1,
                 currentForm: 'wurmple',
                 parentPin: 'wurmple',
-                totalEarned: 0
+                totalEarned: 0,
+                dailyLimit: 0,
+                weeklyLimit: 0
               };
 
               if (this.dbMode === 'firebase') {
@@ -1211,7 +1289,8 @@
               rewardPoints: task.rewardPoints,
               rewardXp: task.rewardXp,
               frequency: task.frequency,
-              icon: task.icon || '📝'
+              icon: task.icon || '📝',
+              maxLimit: task.maxLimit || 0
             });
           } else {
             this.saveLocalData();
@@ -1462,19 +1541,27 @@
                        :class="{
                          'bg-emerald-50 bg-opacity-70 border-emerald-400': isTaskCompletedToday(task),
                          'bg-amber-50 bg-opacity-70 border-amber-400 animate-pulse': isTaskPendingToday(task),
-                         'border-gray-200 hover:border-emerald-300 hover:shadow-sm': !isTaskCompletedToday(task) && !isTaskPendingToday(task)
+                         'bg-gray-100 border-gray-300 opacity-75 cursor-not-allowed': isTaskFullyCompletedLimit(task) && !isTaskCompletedToday(task) && !isTaskPendingToday(task),
+                         'border-gray-200 hover:border-emerald-300 hover:shadow-sm': !isTaskCompletedToday(task) && !isTaskPendingToday(task) && !isTaskFullyCompletedLimit(task)
                        }">
                     <div class="flex items-center gap-3">
                       <span class="text-3xl" x-text="task.icon || '📝'"></span>
                       <div>
-                        <h4 class="font-bold text-gray-800 text-sm md:text-base" :class="isTaskCompletedToday(task) ? 'line-through text-gray-400' : ''" x-text="task.name"></h4>
-                        <div class="flex items-center gap-2 mt-1">
+                        <h4 class="font-bold text-gray-800 text-sm md:text-base" :class="(isTaskCompletedToday(task) || isTaskFullyCompletedLimit(task)) ? 'line-through text-gray-400' : ''" x-text="task.name"></h4>
+                        <div class="flex flex-wrap items-center gap-2 mt-1">
                           <span class="text-[10px] md:text-xs text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-bold">
                             +<span x-text="task.rewardPoints"></span> Coins
                           </span>
                           <span class="text-[10px] md:text-xs text-green-600 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded font-bold">
                             +<span x-text="task.rewardXp"></span> EXP
                           </span>
+                          <!-- Core Limit Tracking Badge -->
+                          <template x-if="task.maxLimit > 0">
+                            <span class="text-[10px] md:text-xs font-bold px-1.5 py-0.5 rounded border"
+                                  :class="isTaskFullyCompletedLimit(task) ? 'bg-gray-200 text-gray-600 border-gray-300' : 'bg-indigo-50 text-indigo-700 border-indigo-200'">
+                              Summer Goal: <span x-text="getTaskCompletedCount(task)"></span>/<span x-text="task.maxLimit"></span>
+                            </span>
+                          </template>
                         </div>
                       </div>
                     </div>
@@ -1488,10 +1575,12 @@
                               :class="{
                                 'bg-emerald-500 border-emerald-600 text-white': isTaskCompletedToday(task),
                                 'bg-amber-400 border-amber-500 text-amber-950': isTaskPendingToday(task),
-                                'border-gray-300 hover:border-emerald-400 hover:bg-emerald-50 bg-white': !isTaskCompletedToday(task) && !isTaskPendingToday(task)
+                                'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed': isTaskFullyCompletedLimit(task) && !isTaskCompletedToday(task) && !isTaskPendingToday(task),
+                                'border-gray-300 hover:border-emerald-400 hover:bg-emerald-50 bg-white': !isTaskCompletedToday(task) && !isTaskPendingToday(task) && !isTaskFullyCompletedLimit(task)
                               }">
                         <i class="fa-solid fa-check text-lg" x-show="isTaskCompletedToday(task)"></i>
                         <i class="fa-solid fa-hourglass text-sm" x-show="isTaskPendingToday(task)"></i>
+                        <i class="fa-solid fa-lock text-xs" x-show="isTaskFullyCompletedLimit(task) && !isTaskCompletedToday(task) && !isTaskPendingToday(task)"></i>
                       </button>
                     </div>
                   </div>
@@ -1514,19 +1603,27 @@
                        :class="{
                          'bg-emerald-50 bg-opacity-70 border-emerald-400': isTaskCompletedThisWeek(task),
                          'bg-amber-50 bg-opacity-70 border-amber-400 animate-pulse': isTaskPendingThisWeek(task),
-                         'border-gray-200 hover:border-emerald-300 hover:shadow-sm': !isTaskCompletedThisWeek(task) && !isTaskPendingThisWeek(task)
+                         'bg-gray-100 border-gray-300 opacity-75 cursor-not-allowed': isTaskFullyCompletedLimit(task) && !isTaskCompletedThisWeek(task) && !isTaskPendingThisWeek(task),
+                         'border-gray-200 hover:border-emerald-300 hover:shadow-sm': !isTaskCompletedThisWeek(task) && !isTaskPendingThisWeek(task) && !isTaskFullyCompletedLimit(task)
                        }">
                     <div class="flex items-center gap-3">
                       <span class="text-3xl" x-text="task.icon || '📖'"></span>
                       <div>
-                        <h4 class="font-bold text-gray-800 text-sm md:text-base" :class="isTaskCompletedThisWeek(task) ? 'line-through text-gray-400' : ''" x-text="task.name"></h4>
-                        <div class="flex items-center gap-2 mt-1">
+                        <h4 class="font-bold text-gray-800 text-sm md:text-base" :class="(isTaskCompletedThisWeek(task) || isTaskFullyCompletedLimit(task)) ? 'line-through text-gray-400' : ''" x-text="task.name"></h4>
+                        <div class="flex flex-wrap items-center gap-2 mt-1">
                           <span class="text-[10px] md:text-xs text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-bold">
                             +<span x-text="task.rewardPoints"></span> Coins
                           </span>
                           <span class="text-[10px] md:text-xs text-green-600 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded font-bold">
                             +<span x-text="task.rewardXp"></span> EXP
                           </span>
+                          <!-- Core Limit Tracking Badge -->
+                          <template x-if="task.maxLimit > 0">
+                            <span class="text-[10px] md:text-xs font-bold px-1.5 py-0.5 rounded border"
+                                  :class="isTaskFullyCompletedLimit(task) ? 'bg-gray-200 text-gray-600 border-gray-300' : 'bg-indigo-50 text-indigo-700 border-indigo-200'">
+                              Summer Goal: <span x-text="getTaskCompletedCount(task)"></span>/<span x-text="task.maxLimit"></span>
+                            </span>
+                          </template>
                         </div>
                       </div>
                     </div>
@@ -1540,10 +1637,12 @@
                               :class="{
                                 'bg-emerald-500 border-emerald-600 text-white': isTaskCompletedThisWeek(task),
                                 'bg-amber-400 border-amber-500 text-amber-950': isTaskPendingThisWeek(task),
-                                'border-gray-300 hover:border-emerald-400 hover:bg-emerald-50 bg-white': !isTaskCompletedThisWeek(task) && !isTaskPendingThisWeek(task)
+                                'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed': isTaskFullyCompletedLimit(task) && !isTaskCompletedThisWeek(task) && !isTaskPendingThisWeek(task),
+                                'border-gray-300 hover:border-emerald-400 hover:bg-emerald-50 bg-white': !isTaskCompletedThisWeek(task) && !isTaskPendingThisWeek(task) && !isTaskFullyCompletedLimit(task)
                               }">
                         <i class="fa-solid fa-check text-lg" x-show="isTaskCompletedThisWeek(task)"></i>
                         <i class="fa-solid fa-hourglass text-sm" x-show="isTaskPendingThisWeek(task)"></i>
+                        <i class="fa-solid fa-lock text-xs" x-show="isTaskFullyCompletedLimit(task) && !isTaskCompletedThisWeek(task) && !isTaskPendingThisWeek(task)"></i>
                       </button>
                     </div>
                   </div>
@@ -1577,7 +1676,7 @@
                            'bg-gradient-to-br from-blue-600 via-sky-500 to-blue-800': pack.theme === 'blue',
                            'bg-gradient-to-br from-purple-600 via-indigo-500 to-purple-800': pack.theme === 'purple',
                            'bg-gradient-to-br from-emerald-600 via-teal-500 to-emerald-800': pack.theme === 'green',
-                           'bg-gradient-to-br from-amber-500 via-yellow-400 to-yellow-600 text-amber-950': pack.theme === 'yellow',
+                           'bg-gradient-to-br from-amber-500 via-yellow-400 to-yellow-600 text-amber-955': pack.theme === 'yellow',
                            'bg-gradient-to-br from-cyan-600 via-teal-500 to-teal-800': pack.theme === 'teal'
                          }">
                       <div class="absolute inset-0 pack-shine opacity-10 pointer-events-none"></div>
@@ -1957,6 +2056,10 @@ service cloud.firestore {
                           <span x-text="task.frequency"></span> • 
                           <span class="text-amber-600">+<span x-text="task.rewardPoints"></span> Coins</span> • 
                           <span class="text-green-600">+<span x-text="task.rewardXp"></span> EXP</span>
+                          <!-- Limit marker in the parent task roster -->
+                          <template x-if="task.maxLimit > 0">
+                            <span class="text-indigo-600 font-bold"> • Max Limit: <span x-text="task.maxLimit"></span> times</span>
+                          </template>
                         </div>
                       </div>
                     </div>
@@ -2056,6 +2159,36 @@ service cloud.firestore {
                     <option value="beautifly" :selected="profile.currentForm === 'beautifly'">🦋 Level 10 Option: Beautifly</option>
                     <option value="dustox" :selected="profile.currentForm === 'dustox'">🐝 Level 10 Option: Dustox</option>
                   </select>
+                </div>
+              </div>
+
+              <!-- Task Limiting & Randomization Card -->
+              <div class="bg-emerald-50 p-5 rounded-2xl border border-emerald-200 space-y-3">
+                <h4 class="font-extrabold text-sm text-emerald-800 flex items-center gap-1.5">
+                  <i class="fa-solid fa-shuffle animate-pulse"></i> Task Limiting & Randomization
+                </h4>
+                <p class="text-xs text-gray-500 font-medium">
+                  Control how many tasks show up on your son's dashboard. Extra tasks will be randomly rotated each day/week, keeping them fresh and consistent on browser refresh!
+                </p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                  <div>
+                    <label class="block text-xs font-bold text-gray-600 mb-1">Daily Tasks Limit</label>
+                    <select x-model.number="profile.dailyLimit" @change="syncProfile()" class="w-full border-2 border-emerald-300 bg-white rounded-lg px-3 py-2 text-xs font-bold text-gray-700">
+                      <option value="0">Show All (Default)</option>
+                      <template x-for="n in getRange(tasks.filter(t => t.frequency === 'daily').length)" :key="n">
+                        <option :value="n" x-text="`Limit to ${n} task${n > 1 ? 's' : ''}`" :selected="profile.dailyLimit === n"></option>
+                      </template>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-gray-600 mb-1">Weekly Tasks Limit</label>
+                    <select x-model.number="profile.weeklyLimit" @change="syncProfile()" class="w-full border-2 border-emerald-300 bg-white rounded-lg px-3 py-2 text-xs font-bold text-gray-700">
+                      <option value="0">Show All (Default)</option>
+                      <template x-for="n in getRange(tasks.filter(t => t.frequency === 'weekly').length)" :key="n">
+                        <option :value="n" x-text="`Limit to ${n} task${n > 1 ? 's' : ''}`" :selected="profile.weeklyLimit === n"></option>
+                      </template>
+                    </select>
+                  </div>
                 </div>
               </div>
 
@@ -2167,7 +2300,7 @@ service cloud.firestore {
 
     <!-- MODAL: ADD CUSTOM TASK -->
     <div x-show="showNewTaskModal" class="fixed inset-0 z-40 flex items-center justify-center bg-black bg-opacity-50 p-4" x-transition>
-      <div class="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border-2 border-red-300">
+      <div class="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border-2 border-red-300 text-gray-800">
         <h3 class="pokemon-title text-lg text-red-800 mb-4">Create Summer Activity</h3>
         
         <div class="space-y-4">
@@ -2199,23 +2332,24 @@ service cloud.firestore {
               <label class="block text-xs font-bold text-gray-500 mb-1">EMOJI ICON</label>
               <select x-model="newTask.icon" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 font-semibold text-sm focus:border-red-400 focus:outline-none">
                 <option value="🎻">🎻 Violin</option>
-                <option value="📖">📖 Book</option>
-                <option value="🧮">🧮 Math</option>
+                <option value="📚">📚 Book</option>
+                <option value="🔢">🔢 Math</option>
+                <option value="🧹">🧹 Cleaning</option>
                 <option value="⚽">⚽ Sports</option>
-                <option value="🏊">🏊 Swimming</option>
-                <option value="🏋️">🏋️ Exercise</option>
-                <option value="🚴">🚴 Bike Ride</option>
-                <option value="🥾">🥾 Hike</option>
-                <option value="📟">📟 Arduino Project</option>
-                <option value="🛠️">🛠️ Project</option>
-                <option value="🤹">🤹 Skill</option>
-                <option value="🪙">🪙 Metal</option>
-                <option value="🚁">🚁 Drone</option>
-                <option value="💩">💩 Poop</option>
-                <option value="🧦">🧦 Laudnry</option>
+                <option value="🎨">🎨 Art</option>
+                <option value="🥦">🥦 Eat Veggies</option>
+                <option value="🛏️">🛏️ Bedtime</option>
                 <option value="🏛️">🏛️ Museum</option>
+                <option value="📝">📝 Note</option>
               </select>
             </div>
+          </div>
+
+          <!-- Summer limit input field -->
+          <div>
+            <label class="block text-xs font-bold text-gray-500 mb-1">SUMMER LIMIT (OPTIONAL)</label>
+            <input type="number" x-model.number="newTask.maxLimit" placeholder="0 = unlimited" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 font-semibold text-sm focus:border-red-400 focus:outline-none" />
+            <span class="text-[10px] text-gray-400 font-semibold block mt-1">Leave at 0 or empty for unlimited completions all summer.</span>
           </div>
 
           <div class="flex gap-2 pt-4 border-t border-gray-100">
@@ -2228,7 +2362,7 @@ service cloud.firestore {
 
     <!-- MODAL: ADD/EDIT BOOSTER PACK -->
     <div x-show="showNewPackModal" class="fixed inset-0 z-40 flex items-center justify-center bg-black bg-opacity-50 p-4" x-transition>
-      <div class="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border-2 border-red-300">
+      <div class="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border-2 border-red-300 text-gray-800">
         <h3 class="pokemon-title text-lg text-red-800 mb-4">Stock Booster Pack</h3>
         
         <div class="space-y-4">
