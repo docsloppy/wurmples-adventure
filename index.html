@@ -192,6 +192,15 @@
           dustox: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/269.png'
         },
 
+        // Pokédex Metadata for categories and numbers
+        pokemonMeta: {
+          wurmple: { category: "Worm Pokémon", number: "0265" },
+          silcoon: { category: "Cocoon Pokémon", number: "0266" },
+          cascoon: { category: "Cocoon Pokémon", number: "0268" },
+          beautifly: { category: "Butterfly Pokémon", number: "0267" },
+          dustox: { category: "Poison Moth Pokémon", number: "0269" }
+        },
+
         imageErrors: {
           wurmple: false,
           silcoon: false,
@@ -932,8 +941,8 @@
         getEvolutionAdvice() {
           const form = this.profile.currentForm;
           const lvl = this.profile.level;
-          if (form === 'wurmple' && lvl < 5) return `🔒 Reach Level 5 to unlock cocoon evolution! (Needs ${500 - this.profile.xp} more XP)`;
-          if ((form === 'silcoon' || form === 'cascoon') && lvl < 10) return `🔒 Reach Level 10 to evolve into final form! (Needs ${1000 - this.profile.xp} more XP)`;
+          if (form === 'wurmple' && lvl < 5) return `🔒 Reach Level 5 to unlock cocoon evolution! (Needs ${400 - this.profile.xp} more XP)`;
+          if ((form === 'silcoon' || form === 'cascoon') && lvl < 10) return `🔒 Reach Level 10 to evolve into final form! (Needs ${900 - this.profile.xp} more XP)`;
           return "🎉 Congratulations! Max Evolution achieved!";
         },
 
@@ -1346,6 +1355,7 @@
   </script>
 
   <!-- Alpine.js -->
+  <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </head>
 <body class="bg-gradient-to-b from-emerald-50 via-green-100 to-emerald-200 min-h-screen relative overflow-x-hidden">
@@ -1520,7 +1530,8 @@
             <!-- Evolutionary Title Display -->
             <div class="mb-4">
               <h3 class="pokemon-title text-2xl font-bold text-gray-800 capitalize" x-text="profile.currentForm"></h3>
-              <p class="text-xs text-gray-500 font-bold">Worm Pokémon • No. 0265</p>
+              <!-- Reactive Pokédex Classification and Number binding -->
+              <p class="text-xs text-gray-500 font-bold" x-text="`${pokemonMeta[profile.currentForm]?.category || ''} • No. ${pokemonMeta[profile.currentForm]?.number || ''}`"></p>
             </div>
 
             <!-- Evolve Button -->
@@ -1764,7 +1775,7 @@
 
                       <button @click="attemptPurchasePack(pack)" 
                               class="w-full text-xs font-extrabold py-2 px-3 rounded-xl border-2 transition-all"
-                              :class="pack.stock > 0 && profile.points >= pack.cost ? 'bg-amber-400 border-amber-500 text-amber-950 hover:bg-amber-500 active:scale-95' : 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed'"
+                              :class="pack.stock > 0 && profile.points >= pack.cost ? 'bg-amber-400 border-amber-500 text-amber-955 hover:bg-amber-500 active:scale-95' : 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed'"
                               :disabled="pack.stock <= 0 || profile.points < pack.cost">
                         <template x-if="pack.stock <= 0">
                           <span>🚫 Out of Stock</span>
@@ -2212,7 +2223,7 @@ service cloud.firestore {
                 <h4 class="font-extrabold text-sm text-emerald-800 flex items-center gap-1.5">
                   <i class="fa-solid fa-shuffle animate-pulse"></i> Task Limiting & Randomization
                 </h4>
-                <p class="text-xs text-gray-500 font-medium">
+                <p class="text-xs text-gray-500 font-semibold font-medium">
                   Control how many tasks show up on your son's dashboard. Extra tasks will be randomly rotated each day/week, keeping them fresh and consistent on browser refresh!
                 </p>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
@@ -2237,7 +2248,7 @@ service cloud.firestore {
                 </div>
               </div>
 
-              <!-- NEW: Task Completion Caps Card -->
+              <!-- Task Completion Caps Card -->
               <div class="bg-indigo-50 p-5 rounded-2xl border border-indigo-200 space-y-3">
                 <h4 class="font-extrabold text-sm text-indigo-800 flex items-center gap-1.5">
                   <i class="fa-solid fa-circle-minus animate-pulse"></i> Task Completion Caps
@@ -2406,7 +2417,7 @@ service cloud.firestore {
             <div>
               <label class="block text-xs font-bold text-gray-500 mb-1">EMOJI ICON</label>
               <select x-model="newTask.icon" class="w-full border-2 border-gray-300 rounded-xl px-3 py-2 font-semibold text-sm focus:border-red-400 focus:outline-none">
-                <option value="🎻">🎻 Violin</option>
+             		<option value="🎻">🎻 Violin</option>
                 <option value="📖">📖 Book</option>
                 <option value="🧮">🧮 Math</option>
                 <option value="⚽">⚽ Sports</option>
@@ -2420,7 +2431,7 @@ service cloud.firestore {
                 <option value="🪙">🪙 Metal</option>
                 <option value="🚁">🚁 Drone</option>
                 <option value="💩">💩 Poop</option>
-                <option value="🧦">🧦 Laudnry</option>
+                <option value="🧦">🧦 Laundry</option>
                 <option value="🏛️">🏛️ Museum</option>
               </select>
             </div>
@@ -2473,7 +2484,6 @@ service cloud.firestore {
               <option value="yellow">Yellow (Mega Dream)</option>
               <option value="teal">Teal (Mega Brave)</option>
               <option value="pink">Pink (Mega Symphonia)</option>
-              
             </select>
           </div>
 
@@ -2521,7 +2531,7 @@ service cloud.firestore {
         <p class="text-xs md:text-sm text-gray-600 font-semibold mb-6 leading-relaxed" x-text="confirmModal.message"></p>
         <div class="flex gap-3">
           <button @click="confirmModal.show = false" class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-2.5 rounded-xl text-xs transition-all">Cancel</button>
-          <button @click="confirmModal.onConfirm()" class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2.5 rounded-xl text-xs shadow-sm transition-all">Yes, Proceed!</button>
+          <button @click="confirmModal.onConfirm()" class="flex-1 bg-emerald-50 hover:bg-emerald-600 text-white font-bold py-2.5 rounded-xl text-xs shadow-sm transition-all">Yes, Proceed!</button>
         </div>
       </div>
     </div>
